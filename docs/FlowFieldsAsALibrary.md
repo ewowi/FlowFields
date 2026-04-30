@@ -686,3 +686,121 @@ The PARAMETER_TABLE X-macro *does* carry the intended type — `X(uint8_t, NumDo
 **What needs to happen**
 
 `resolveCVar` and `bindParam` would need typed overloads (or a tagged-union / `std::variant` slot) so that `uint8_t`, `bool`, and `uint16_t` cVars can participate in binding without being widened to `float`. The BLE `processNumber()` already has the type available via the X-macro and could cast on assignment instead of relying on implicit conversion.
+
+---
+
+## Session 3 Retrospective
+
+Session 3 addressed four areas: a latent bug in the binding mechanism (controls not updating), encapsulation of two remaining global variables, PSRAM-aware memory allocation, and dimension-type widening for large-panel support.
+
+### Definition of Done
+
+| Task | Status | Notes |
+|------|--------|-------|
+| `EMITTER`/`FLOW` global encapsulation | ✅ | Moved into `FlowFieldsEngine` as `_emitter`/`_flow` members; `bleControl.h` updated to read/write via `g_engine->_emitter`/`_flow`; extern declarations removed from `parameterSchema.h` |
+| PSRAM-aware grid allocation | ✅ | `ps_malloc()` used for all 8 float arrays (gR/gG/gB, tR/tG/tB, xProf, yProf) on `BOARD_HAS_PSRAM` devices; `malloc()` fallback otherwise; both freed with `free()` |
+| Binding fix — controls not propagating in FastLED-MM | ✅ | Root cause found and fixed; `resolveField` replaces `resolveCVar`; bindings now target struct fields directly and are applied after `syncFromCVars()` |
+| Dimension type widening | ✅ | `_width`/`_height`/`_minDim`: `uint8_t` → `uint16_t`; `_numLeds`: `uint16_t` → `uint32_t`; `xyFunc` return: `uint16_t` → `uint32_t`; supports up to 1024×1024 (1M pixels) for PC targets |
+| `EMITTER_NAMES` / `FLOW_NAMES` arrays | ✅ | Added as `inline const char*` arrays to `componentEnums.h`, parallel to the enum definitions; available to any consumer without pulling in BLE infrastructure |
+| `FlowFieldsEffect.h` — select option population | ✅ | `addSelectOption` loops added for emitter and flow controls using the new name arrays |
+
+### Change Details
+
+#### 1. `EMITTER` / `FLOW` global encapsulation
+
+`EMITTER` and `FLOW` were `uint8_t` globals defined in `main.cpp` and declared `extern` in `parameterSchema.h`. Any library consumer had to define them manually in their own code — a leaking implementation detail that caused linker errors in FastLED-MM.
+
+Both are now `uint8_t _emitter` / `uint8_t _flow` members of `FlowFieldsEngine`. The BLE layer writes through `g_engine->_emitter` and `g_engine->_flow`; library consumers control them via `bindParam("emitter", ...)` / `bindParam("flow", ...)` exactly like any other parameter. **The standalone firmware is unaffected** — BLE callbacks work identically, just through the engine pointer that was already required.
+
+#### 2. PSRAM-aware grid allocation
+
+The eight float arrays that hold the pixel colour grid (six `float**` colour channels plus `xProf`/`yProf` noise profiles) are the largest allocations in the engine. On PSRAM-equipped boards (S3, S3 mini, etc.) they previously landed in the small internal DRAM heap, limiting usable panel size and leaving SPIRAM idle.
+
+A `psramAlloc(count)` helper now calls `ps_malloc()` when `BOARD_HAS_PSRAM` is defined, with a `malloc()` fallback. `free()` is used for both (valid on ESP32). The change is gated by the standard build flag — boards without PSRAM compile and run identically to before. **This is a direct improvement for the standalone firmware** on any PSRAM-equipped ESP32.
+
+#### 3. Binding fix — controls not propagating (`resolveField`)
+
+This was the most important fix in Session 3. In FastLED-MM, moving a slider had no visible effect on the engine even though `bindParam` appeared to work at startup.
+
+**Root cause — execution order in `run()`:**
+
+The old sequence was:
+1. Copy external floats → cVars (binding step)
+2. On emitter/flow change: `pushDefaultsToCVars()` — **overwrites cVars with struct defaults**
+3. `syncFromCVars()` — structs get the defaults, not the external values
+
+`pushDefaultsToCVars()` fires on the first frame (because `lastEmitter` starts at 255) and on every emitter or flow switch, silently discarding whatever the binding had written. A secondary bug: `persistence` was split into `cPersistence + cPersistFine`; the binding wrote only to `cPersistence`, so `cPersistFine` accumulated as a permanent offset.
+
+**Fix — two changes working together:**
+
+**(a)** `resolveCVar` renamed to `resolveField` and changed to return **struct field pointers** (`&orbitalDots.orbitSpeed`, `&noiseFlow.xSpeed`, `&globalSpeed`, `&persistence`, …) instead of cVar global pointers. Special cases that need cVar fan-out (shared params like `numDots`, `dotDiam`, `blendFactor`; and uint8_t-target params like `lineClamp`, `solverIterations`) keep cVar pointers — these are documented in the function with a comment explaining the one-frame lag.
+
+**(b)** Binding application **moved to after `syncFromCVars()`** in `run()`. The new sequence is:
+
+```
+1. pushDefaultsToCVars()  — if emitter/flow changed: defaults → cVars
+2. syncFromCVars()        — BLE path:  cVars → struct fields
+3. binding loop           — library path: external floats → same struct fields (overrides step 2)
+```
+
+Because bindings write to the struct fields that the emitters and flows read directly — and they run last — external values always win, regardless of what `pushDefaultsToCVars` or `syncFromCVars` wrote. The `persistence` split bug disappears because "persistence" now resolves to `&persistence` (the engine member), which `syncFromCVars` writes and the binding then overrides with the raw external value.
+
+**The BLE firmware path is unchanged.** BLE writes to cVars; `syncFromCVars` copies to structs; no bindings are registered so the binding loop is a no-op. Existing behaviour is bit-for-bit identical.
+
+#### 4. Dimension type widening
+
+`_width` and `_height` were `uint8_t` (max 255), `_numLeds` was `uint16_t` (max 65 535). PC targets running the engine as a library can address panels of 1024×1024 = ~1 M pixels — both limits are far exceeded.
+
+Changed to `uint16_t` for the spatial dimensions and `uint32_t` for the LED count, propagated consistently through `setup()`, `allocGrid()`, `freeGrid()`, the LED-copy loop, `xyFunc` pointer type, `myXY` in `boardConfig.h` and the example, `ledNum` in `main.cpp`, and the index arithmetic (explicit `(uint32_t)y * width + x` cast to prevent 16-bit overflow). ESP32 builds are unaffected — the wider types have identical runtime cost on a 32-bit MCU.
+
+#### 5. `EMITTER_NAMES` / `FLOW_NAMES` in `componentEnums.h`
+
+The emitter and flow name strings existed only in `parameterSchema.h` — a BLE-infrastructure header not appropriate to include from a library consumer. `componentEnums.h` is the natural home for them: they are the string counterpart of the enum values defined in the same file.
+
+Two `inline const char*` arrays were added:
+
+```cpp
+inline const char* const EMITTER_NAMES[EMITTER_COUNT] = {
+    "orbitaldots", "swarmingdots", "audiodots", "lissajous",
+    "borderrect",  "noisekaleido", "cube",       "fluidjet"
+};
+
+inline const char* const FLOW_NAMES[FLOW_COUNT] = {
+    "noise", "radial", "directional", "rings", "spiral", "fluid"
+};
+```
+
+Any consumer that includes `FlowFieldsEngine.h` already gets `componentEnums.h` transitively. No PROGMEM — that is a firmware-specific concern handled separately in `parameterSchema.h`.
+
+#### 6. Select option population in `FlowFieldsEffect.h`
+
+The example was registering emitter and flow controls as `"select"` type but never populating the option list, leaving the UI with a numeric range but no labels. Two `addSelectOption` loops now follow each `addControl` call:
+
+```cpp
+addControl(emitterIdx_, "emitter", "select", 0.0f, (float)(EMITTER_COUNT - 1), 0.0f);
+for (int i = 0; i < EMITTER_COUNT; i++)
+    addSelectOption(emitterIdx_, EMITTER_NAMES[i]);
+```
+
+The loop is indexing the same `EMITTER_NAMES` array whose order matches the `Emitter` enum — no possibility of label/value mismatch.
+
+### What Went Well
+
+- **The binding bug had a clean fix.** Once the execution order in `run()` was understood, the solution was a targeted reorder plus a rename (`resolveCVar` → `resolveField`) with updated return values. No architecture changes outside `flowFieldsEngine.cpp`.
+- **PSRAM allocation is fully backwards compatible.** The `#if defined(BOARD_HAS_PSRAM)` guard means boards without PSRAM see exactly the old behaviour. Adding the flag to `platformio.ini` is the only step needed to enable PSRAM on a new board.
+- **Type widening required no logic changes.** Widening integer types on a 32-bit MCU is safe by construction — no overflow, no silent truncation. The only required care was the `xyFunc` index computation, which got an explicit cast.
+- **`EMITTER_NAMES`/`FLOW_NAMES` close a gap in the library's API surface.** Before this change, a consumer had no way to get human-readable names for the enum values without depending on the BLE layer.
+
+### What Didn't Go So Well
+
+- **The binding bug was not caught in Session 2.** The `bindParam` mechanism was designed and tested conceptually but not exercised in FastLED-MM against a running UI. The ordering problem (`pushDefaultsToCVars` silently overwriting binding results) only became visible when a real consumer moved a slider and saw no response.
+- **`resolveField` has two tiers of correctness.** Most params resolve directly to struct fields (immediate effect). A few shared or type-cast params (`numDots`, `dotDiam`, `blendFactor`, `lineClamp`, `solverIterations`) still go through cVars and take effect one frame later. This is documented and invisible in practice, but it is an inconsistency that could surprise someone adding a new parameter.
+
+### Remaining Backlog (updated)
+
+| Item | Priority | Notes |
+|------|----------|-------|
+| Verify visuals on device with FastLED 4.x | High | Do before merging to `main` |
+| Audio integration steps 2–3 | Medium | Engine audio-data pointer + FastLED-MM loop wiring |
+| Typed cVar storage | Low | Non-float cVars not reachable via `resolveField`; typed overloads needed |
+| `resolveField` two-tier consistency | Low | Shared/cast params have one-frame lag via cVar; could be eliminated by adding fan-out in the binding loop |

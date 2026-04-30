@@ -2,6 +2,7 @@
 
 #include <NimBLEDevice.h>
 #include "parameterSchema.h"
+#include "FlowFieldsEngine.h"
 
 #if __has_include("hosted_ble_bridge.h")
     #include "hosted_ble_bridge.h"
@@ -212,16 +213,16 @@ void sendEmitterState() {
    }
 
    ArduinoJson::JsonDocument stateDoc;
-   stateDoc["emitter"] = EMITTER;
+   stateDoc["emitter"] = flowFields::g_engine->_emitter;
 
    // Get parameter list for current visualizer
-   const EmitterParamEntry* emitterParams = getEmitterParams(EMITTER);
+   const EmitterParamEntry* emitterParams = getEmitterParams(flowFields::g_engine->_emitter);
 
    ArduinoJson::JsonObject params = stateDoc["parameters"].to<ArduinoJson::JsonObject>();
 
    if (debug) {
        Serial.print("Current emitter: ");
-       Serial.println(EMITTER);
+       Serial.println(flowFields::g_engine->_emitter);
        Serial.print("Found params: ");
        Serial.println(emitterParams != nullptr ? "YES" : "NO");
        if (emitterParams != nullptr) {
@@ -276,7 +277,7 @@ void sendEmitterState() {
    ArduinoJson::JsonDocument envelope;
    envelope["id"] = "emitterState";
    ArduinoJson::JsonObject val = envelope["val"].to<ArduinoJson::JsonObject>();
-   val["emitter"] = EMITTER;
+   val["emitter"] = flowFields::g_engine->_emitter;
    ArduinoJson::JsonObject valParams = val["parameters"].to<ArduinoJson::JsonObject>();
    for (auto kv : params) {
        valParams[kv.key()] = kv.value();
@@ -302,16 +303,16 @@ void sendFlowState() {
    }
 
    ArduinoJson::JsonDocument stateDoc;
-   stateDoc["flow"] = FLOW;
+   stateDoc["flow"] = flowFields::g_engine->_flow;
 
    // Get parameter list for current flow
-   const FlowParamEntry* flowParams = getFlowParams(FLOW);
+   const FlowParamEntry* flowParams = getFlowParams(flowFields::g_engine->_flow);
 
    ArduinoJson::JsonObject params = stateDoc["parameters"].to<ArduinoJson::JsonObject>();
 
    if (debug) {
        Serial.print("Current emitter: ");
-       Serial.println(FLOW);
+       Serial.println(flowFields::g_engine->_flow);
        Serial.print("Found params: ");
        Serial.println(flowParams != nullptr ? "YES" : "NO");
        if (flowParams != nullptr) {
@@ -366,7 +367,7 @@ void sendFlowState() {
    ArduinoJson::JsonDocument envelope;
    envelope["id"] = "flowState";
    ArduinoJson::JsonObject val = envelope["val"].to<ArduinoJson::JsonObject>();
-   val["flow"] = FLOW;
+   val["flow"] = flowFields::g_engine->_flow;
    ArduinoJson::JsonObject valParams = val["parameters"].to<ArduinoJson::JsonObject>();
    for (auto kv : params) {
        valParams[kv.key()] = kv.value();
@@ -492,12 +493,12 @@ void processButton(uint8_t receivedValue) {
    sendReceiptButton(receivedValue);
 
    if (receivedValue < 20) { // Emitter selection
-      EMITTER = receivedValue;
+      flowFields::g_engine->_emitter = receivedValue;
       displayOn = true;
    }
 
    if (receivedValue >= 20 && receivedValue < 40) { // Flow selection
-      FLOW = receivedValue - 20;
+      flowFields::g_engine->_flow = receivedValue - 20;
       displayOn = true;
    }
 

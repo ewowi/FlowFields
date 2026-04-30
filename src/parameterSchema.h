@@ -15,8 +15,7 @@ inline BusParamSetterFn setBusParam = nullptr;
 typedef float (*BusParamGetterFn)(uint8_t busId, const String& paramName);
 inline BusParamGetterFn getBusParam = nullptr;
 
-extern uint8_t EMITTER;
-extern uint8_t FLOW;
+// EMITTER and FLOW are now FlowFieldsEngine::_emitter / ::_flow members.
 
 // ═══════════════════════════════════════════════════════════════════
 // GLOBAL PARAMETERS

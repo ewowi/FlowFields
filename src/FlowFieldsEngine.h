@@ -9,10 +9,10 @@ namespace flowFields {
 class FlowFieldsEngine {
 public:
     // ── Dimensions ────────────────────────────────────────────────────────
-    uint8_t  _width   = 0;
-    uint8_t  _height  = 0;
-    uint16_t _numLeds = 0;
-    uint8_t  _minDim  = 0;
+    uint16_t _width   = 0;
+    uint16_t _height  = 0;
+    uint32_t _numLeds = 0;
+    uint16_t _minDim  = 0;
 
     // ── Float grids — float**[height][width] allocated in setup() ─────────
     float** gR = nullptr;
@@ -44,13 +44,15 @@ public:
     bool  useRainbow  = false;
 
     // ── Selection state ───────────────────────────────────────────────────
+    uint8_t _emitter    = 0;     // replaces global EMITTER — set by BLE or bindParam
+    uint8_t _flow       = 0;     // replaces global FLOW
     uint8_t lastEmitter = 255;
     uint8_t lastFlow    = 255;
     Emitter activeEmitter = EMITTER_ORBITALDOTS;
     Flow    activeFlow    = FLOW_NOISE;
 
     // ── XY mapping ────────────────────────────────────────────────────────
-    uint16_t (*xyFunc)(uint8_t x, uint8_t y) = nullptr;
+    uint32_t (*xyFunc)(uint16_t x, uint16_t y) = nullptr;
 
     // ── Modulator state ───────────────────────────────────────────────────
     timers    timings;
@@ -63,8 +65,8 @@ public:
     void (*onFlowChanged)()    = nullptr;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────
-    void setup(uint8_t width, uint8_t height, uint16_t numLeds,
-               uint16_t (*xy)(uint8_t, uint8_t));
+    void setup(uint16_t width, uint16_t height, uint32_t numLeds,
+               uint32_t (*xy)(uint16_t, uint16_t));
     void run(fl::CRGB* leds);
     void teardown();
 
@@ -97,11 +99,11 @@ public:
     void bindParam(const char* name, float* externalPtr);
 
 private:
-    static float** allocGrid(uint8_t w, uint8_t h);
-    static void    freeGrid(float** g, uint8_t h);
-    float*         resolveCVar(const char* name);
+    static float** allocGrid(uint16_t w, uint16_t h);
+    static void    freeGrid(float** g, uint16_t h);
+    float*         resolveField(const char* name);
 
-    struct ParamBinding { float* external; float* cvar; };
+    struct ParamBinding { float* external; float* field; };
     static constexpr int MAX_PARAM_BINDINGS = 80;
     ParamBinding paramBindings_[MAX_PARAM_BINDINGS] = {};
     int          numParamBindings_ = 0;

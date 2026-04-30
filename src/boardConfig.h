@@ -84,7 +84,7 @@ extern const uint16_t serpTopDown[NUM_LEDS] PROGMEM;
 extern const uint16_t serpBottomUp[NUM_LEDS] PROGMEM;
 
 extern uint8_t cMapping;
-extern uint16_t ledNum;
+extern uint32_t ledNum;
 
 enum Mapping {
 	TopDownProgressive = 0,
@@ -93,9 +93,9 @@ enum Mapping {
 	BottomUpSerpentine
 };
 
-uint16_t myXY(uint8_t x, uint8_t y) {
+uint32_t myXY(uint16_t x, uint16_t y) {
 		if (x >= WIDTH || y >= HEIGHT) return 0;
-		uint16_t i = ( y * WIDTH ) + x;
+		uint32_t i = (uint32_t)y * WIDTH + x;
 		switch(cMapping){
 			case 0:	 ledNum = progTopDown[i]; break;
 			case 1:	 ledNum = progBottomUp[i]; break;
