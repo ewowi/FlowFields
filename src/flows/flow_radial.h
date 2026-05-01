@@ -31,11 +31,11 @@ namespace flowFields {
         // Frame-rate-independent fade: half-life = persistence seconds
         float fade = fl::powf(0.5f, g_engine->dt / g_engine->persistence);
 
-        float step = radial.radialStep;
-        if (radial.outward) {
+        float step = g_engine->radial.radialStep;
+        if (g_engine->radial.outward) {
             step *= -1.f;
         }
-        float frac = radial.blendFactor;
+        float frac = g_engine->radial.blendFactor;
         float inv  = 1.0f - frac;
 
         // Copy live grid to scratch buffer

@@ -98,10 +98,10 @@ namespace flowFields {
 
     static void cubePrepare() {
 
-        const ModConfig& scaleMod = cube.modScale;
-        const ModConfig& rsxMod   = cube.modRotateSpeedX;
-        const ModConfig& rsyMod   = cube.modRotateSpeedY;
-        const ModConfig& rszMod   = cube.modRotateSpeedZ;
+        const ModConfig& scaleMod = g_engine->cube.modScale;
+        const ModConfig& rsxMod   = g_engine->cube.modRotateSpeedX;
+        const ModConfig& rsyMod   = g_engine->cube.modRotateSpeedY;
+        const ModConfig& rszMod   = g_engine->cube.modRotateSpeedZ;
 
         // -----------------------------------------------------------------
         // 1) Plumbing: configure timer channels
@@ -131,15 +131,15 @@ namespace flowFields {
         // -----------------------------------------------------------------
 
         // Scale: orbitalDots-style modulation, clamped positive
-        workScale = cube.scale *
+        workScale = g_engine->cube.scale *
             ((1.0f - scaleMod.modLevel) + scaleMod.modLevel * scaleSignal);
         workScale = fmaxf(0.1f, workScale);
 
         // RotateSpeed: orbitalDots-style per axis (allows reversals)
         for (int i = 0; i < 3; i++) {
-            float speed = cube.rotateSpeed[i] *
+            float speed = g_engine->cube.rotateSpeed[i] *
                 ((1.0f - rsMods[i]->modLevel) + rsMods[i]->modLevel * rsSignal[i]);
-            workRotateSpeed[i] = cube.axisFreeze[i] ? 0.0f : speed;
+            workRotateSpeed[i] = g_engine->cube.axisFreeze[i] ? 0.0f : speed;
         }
     }
 

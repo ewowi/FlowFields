@@ -59,7 +59,7 @@ namespace flowFields {
                 // pattern, so the same cell gets the same offset across frames
                 // (no temporal flicker).
                 const float hueOffset = bayerHueDither[y & 3][x & 3] * HUE_DITHER_SCALE;
-                ColorF c = g_engine->rainbow(g_engine->t, fluidJet.jetHueSpeed, hueOffset);
+                ColorF c = g_engine->rainbow(g_engine->t, g_engine->fluidJet.jetHueSpeed, hueOffset);
 
                 const float wScale = w * densityScale;
                 g_engine->gR[y][x] += c.r * wScale;
@@ -72,8 +72,8 @@ namespace flowFields {
     }
 
     static void emitFluidJet() {
-        const ModConfig& forceMod = fluidJet.modJetForce;
-        const ModConfig& angleMod = fluidJet.modAngle;
+        const ModConfig& forceMod = g_engine->fluidJet.modJetForce;
+        const ModConfig& angleMod = g_engine->fluidJet.modAngle;
 
         // ─── 1) Plumbing: configure timer channels ─────────────────
         g_engine->timings.ratio[forceMod.modTimer] = 0.0004f  * forceMod.modRate;
@@ -86,7 +86,7 @@ namespace flowFields {
 
         // ─── 3) Artistic application ───────────────────────────────
         // Force: orbitalDots-style bipolar modulation
-        const float currentForce = fluidJet.jetForce * (1.0f + forceSignal * 0.4f);
+        const float currentForce = g_engine->fluidJet.jetForce * (1.0f + forceSignal * 0.4f);
 
         // Angle: noise-based offset around base direction.
         // Coefficient π/4 per modLevel unit → modLevel=2 reaches full ±π/2 (±90°).
@@ -95,7 +95,7 @@ namespace flowFields {
 
         // Wrap final angle to [0, 2π) for sincos_fast (UB for negative inputs).
         constexpr float INV_2PI = 1.0f / CT_2PI;
-        float angle = fluidJet.jetAngle + angleOffset;
+        float angle = g_engine->fluidJet.jetAngle + angleOffset;
         angle -= fl::floorf(angle * INV_2PI) * CT_2PI;
 
         // Direction decomposition: angle 0 = straight up (negative y)
@@ -105,7 +105,7 @@ namespace flowFields {
         const float velX = dirX * currentForce;
         const float velY = dirY * currentForce;
 
-        const float density = fluidJet.jetDensity;
+        const float density = g_engine->fluidJet.jetDensity;
 
         // Jet position: bottom-center
         const float jx = (float)g_engine->_width * 0.5f;
@@ -113,7 +113,7 @@ namespace flowFields {
 
         // ─── 4) 3-layered Gaussian splat ──────────────────────────
         // Each layer is shifted along the jet axis to extend the plume.
-        const float r = fluidJet.jetRadius;
+        const float r = g_engine->fluidJet.jetRadius;
         // Core layer: 55% density, 100% velocity
         fluidJetSplat(jx, jy, r,
                       density * 0.55f,
@@ -128,11 +128,11 @@ namespace flowFields {
                       velX * 0.65f, velY * 0.65f);
 
         // ─── 5) Side injections (lateral push outward) ────────────
-        if (fluidJet.jetSpread > 0.0f) {
+        if (g_engine->fluidJet.jetSpread > 0.0f) {
             // Perpendicular to jet axis: rotate (dirX,dirY) by 90°: (-dirY, dirX)
             const float perpX = -dirY;
             const float perpY =  dirX;
-            const float side = fluidJet.jetSpread;
+            const float side = g_engine->fluidJet.jetSpread;
             // Left side: push left (negative perp)
             fluidJetSplat(jx - perpX * 1.5f, jy - perpY * 1.5f, r * 0.7f,
                           density * 0.15f,

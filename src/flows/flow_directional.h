@@ -23,7 +23,7 @@ namespace flowFields {
     static float dirT;             // time snapshot for wave phase
 
     static void directionalPrepare() {
-        float angle = g_engine->t * (2.0f * CT_PI * directional.rotateSpeed);
+        float angle = g_engine->t * (2.0f * CT_PI * g_engine->directional.rotateSpeed);
         dirCos = fl::cosf(angle);
         dirSin = fl::sinf(angle);
         dirT   = g_engine->t;
@@ -33,8 +33,8 @@ namespace flowFields {
         // Frame-rate-independent fade
         float fade = fl::powf(0.5f, g_engine->dt / g_engine->persistence);
 
-        float step = directional.windStep;
-        float frac = directional.blendFactor;
+        float step = g_engine->directional.windStep;
+        float frac = g_engine->directional.blendFactor;
         float inv  = 1.0f - frac;
 
         // Wind vector (scaled by step) and perpendicular unit vector
@@ -43,9 +43,9 @@ namespace flowFields {
         float px = -dirSin;
         float py =  dirCos;
 
-        float wAmp  = directional.waveAmp;
-        float wFreq = directional.waveFreq;
-        float wSpd  = directional.waveSpeed;
+        float wAmp  = g_engine->directional.waveAmp;
+        float wFreq = g_engine->directional.waveFreq;
+        float wSpd  = g_engine->directional.waveSpeed;
         bool  doWave = (wAmp > 0.001f);
 
         float maxX = (float)(g_engine->_width  - 1) - 1e-6f;

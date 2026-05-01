@@ -40,10 +40,10 @@ namespace flowFields {
     }
 
     static void emitNoiseKaleido() {
-        const float scale = noiseKaleido.noiseScale;
-        const float speed = noiseKaleido.driftSpeed;
-        const float band = noiseKaleido.noiseBand;
-        const float gamma = noiseKaleido.kaleidoGamma;
+        const float scale = g_engine->noiseKaleido.noiseScale;
+        const float speed = g_engine->noiseKaleido.driftSpeed;
+        const float band = g_engine->noiseKaleido.noiseBand;
+        const float gamma = g_engine->noiseKaleido.kaleidoGamma;
 
         const int baseX = (g_engine->_width / 2) + 1;
         const int baseY = (g_engine->_height / 2) + 1;

@@ -205,6 +205,10 @@ bool loadPreset(int presetNumber) {
 
 //***********************************************************************
 
+// Forward declarations — defined later in this file after bleSetEngineParam.
+static float bleGetEngineParam(const char* name);
+static void  bleSetEngineParam(const char* name, float value);
+
 //void sendDeviceState() {
 
 void sendEmitterState() {

@@ -15,8 +15,8 @@ namespace flowFields {
     static void emitOrbitalDots() {
         static float orbitAngle = 0.0f;
 
-        const ModConfig& speedMod = orbitalDots.modOrbitSpeed;
-        const ModConfig& diamMod  = orbitalDots.modOrbitDiam;
+        const ModConfig& speedMod = g_engine->orbitalDots.modOrbitSpeed;
+        const ModConfig& diamMod  = g_engine->orbitalDots.modOrbitDiam;
 
         // -----------------------------------------------------------------
         // 1) Plumbing: assign timer rates from the parameter configs
@@ -24,7 +24,7 @@ namespace flowFields {
         g_engine->timings.ratio[speedMod.modTimer] = 0.00006f * speedMod.modRate;
         g_engine->timings.ratio[diamMod.modTimer]  = 0.0005f  * diamMod.modRate;
 
-        g_engine->calculate_modulators(orbitalDots.numActiveTimers);
+        g_engine->calculate_modulators(g_engine->orbitalDots.numActiveTimers);
 
         // -----------------------------------------------------------------
         // 2) Signal acquisition: get normalized modulation signals
@@ -41,7 +41,7 @@ namespace flowFields {
         // modLevel = 0 -> base speed only
         // modLevel = 1 -> full bipolar modulation, including negative speed
         const float currentSpeed =
-            orbitalDots.orbitSpeed *
+            g_engine->orbitalDots.orbitSpeed *
             ((1.0f - speedMod.modLevel) + speedMod.modLevel * speedSignal);
 
         orbitAngle += currentSpeed * g_engine->dt;
@@ -52,23 +52,23 @@ namespace flowFields {
         // Prevent collapse into center
         radiusScale = fmaxf(radiusScale, 0.35f);
 
-        const float fNumDots = static_cast<float>(orbitalDots.numDots);
+        const float fNumDots = static_cast<float>(g_engine->orbitalDots.numDots);
         const float ocx = g_engine->_width * 0.5f - 0.5f;
         const float ocy = g_engine->_height * 0.5f - 0.5f;
 
-        const float minOrbit = orbitalDots.dotDiam * 1.5f;
-        const float orad = fmaxf(orbitalDots.orbitDiam * radiusScale, minOrbit);
+        const float minOrbit = g_engine->orbitalDots.dotDiam * 1.5f;
+        const float orad = fmaxf(g_engine->orbitalDots.orbitDiam * radiusScale, minOrbit);
 
         // -----------------------------------------------------------------
         // 4) Rendering
         // -----------------------------------------------------------------
-        for (int i = 0; i < orbitalDots.numDots; i++) {
+        for (int i = 0; i < g_engine->orbitalDots.numDots; i++) {
             const float a = orbitAngle + i * (2.0f * CT_PI / fNumDots);
             const float cx = ocx + fl::cosf(a) * orad;
             const float cy = ocy + fl::sinf(a) * orad;
 
             const ColorF c = g_engine->rainbow(g_engine->t, g_engine->colorShift, i / fNumDots);
-            g_engine->drawDot(cx, cy, orbitalDots.dotDiam, c.r, c.g, c.b);
+            g_engine->drawDot(cx, cy, g_engine->orbitalDots.dotDiam, c.r, c.g, c.b);
         }
     }
 

@@ -109,7 +109,7 @@ namespace flowFields {
         }
         const float SIM_SIZE = (float)g_engine->_minDim;
         const float a = dt_ * diff * SIM_SIZE * SIM_SIZE;
-        linSolve(b, x, x0, a, 1.0f + 4.0f * a, fluid.solverIterations);
+        linSolve(b, x, x0, a, 1.0f + 4.0f * a, g_engine->fluid.solverIterations);
     }
 
     // Semi-Lagrangian advection: backtrace each cell along velocity field
@@ -165,7 +165,7 @@ namespace flowFields {
         setBnd(0, pressure);
 
         // 2. Solve Poisson equation for pressure
-        linSolve(0, pressure, divergence, 1.0f, 4.0f, fluid.solverIterations);
+        linSolve(0, pressure, divergence, 1.0f, 4.0f, g_engine->fluid.solverIterations);
 
         // 3. Subtract pressure gradient from velocity
         for (int y = 0; y < g_engine->_height; y++) {
@@ -197,7 +197,7 @@ namespace flowFields {
         }
 
         // 2. Compute gradient of |curl|, normalize, apply force
-        const float strength = fluid.vorticity;
+        const float strength = g_engine->fluid.vorticity;
         for (int y = 0; y < g_engine->_height; y++) {
             for (int xc = 0; xc < g_engine->_width; xc++) {
                 float gxp = fl::fabsf(sampleClamped(divergence, y,     xc + 1));
@@ -242,8 +242,8 @@ namespace flowFields {
             fluidAllocated = true;
         }
 
-        const ModConfig& velMod = fluid.modVelDissip;
-        const ModConfig& dyeMod = fluid.modDyeDissip;
+        const ModConfig& velMod = g_engine->fluid.modVelDissip;
+        const ModConfig& dyeMod = g_engine->fluid.modDyeDissip;
 
         // 1) Plumbing
         g_engine->timings.ratio[velMod.modTimer] = 0.0004f  * velMod.modRate;
@@ -255,11 +255,11 @@ namespace flowFields {
         const float dySignal  = g_engine->move.directional_noise[dyeMod.modTimer];
 
         // 3) Artistic application
-        workVelDissip = fluid.velocityDissipation *
+        workVelDissip = g_engine->fluid.velocityDissipation *
             ((1.0f - velMod.modLevel) + velMod.modLevel * velSignal);
         workVelDissip = fmaxf(0.01f, fminf(1.0f, workVelDissip));
 
-        workDyeDissip = fluid.dyeDissipation *
+        workDyeDissip = g_engine->fluid.dyeDissipation *
             ((1.0f - dyeMod.modLevel) + dyeMod.modLevel * dySignal);
         workDyeDissip = fmaxf(0.01f, fminf(1.0f, workDyeDissip));
     }
@@ -268,8 +268,8 @@ namespace flowFields {
         const float dt_ = g_engine->dt;
 
         // Apply gravity (uniform vertical force)
-        if (fluid.gravity != 0.0f) {
-            const float dvg = fluid.gravity * dt_;
+        if (g_engine->fluid.gravity != 0.0f) {
+            const float dvg = g_engine->fluid.gravity * dt_;
             for (int y = 0; y < g_engine->_height; y++) {
                 for (int xc = 0; xc < g_engine->_width; xc++) {
                     v[y][xc] += dvg;
@@ -280,8 +280,8 @@ namespace flowFields {
         // ─── VELOCITY STEP ─────────────────────────────────────────
         copyGrid2D(uPrev, u);
         copyGrid2D(vPrev, v);
-        diffuse(1, u, uPrev, fluid.viscosity, dt_);
-        diffuse(2, v, vPrev, fluid.viscosity, dt_);
+        diffuse(1, u, uPrev, g_engine->fluid.viscosity, dt_);
+        diffuse(2, v, vPrev, g_engine->fluid.viscosity, dt_);
         project();
 
         copyGrid2D(uPrev, u);
@@ -290,7 +290,7 @@ namespace flowFields {
         advectField(2, v, vPrev, uPrev, vPrev, dt_);
         project();
 
-        if (fluid.vorticity > 0.0f) {
+        if (g_engine->fluid.vorticity > 0.0f) {
             applyVorticityConfinement(dt_);
             project();
         }
@@ -298,13 +298,13 @@ namespace flowFields {
         // ─── DYE STEP ──────────────────────────────────────────────
         // For each channel: optionally diffuse, then advect through u,v.
         // Use tR/tG/tB as the previous-frame buffer.
-        if (fluid.diffusion > 0.0f) {
+        if (g_engine->fluid.diffusion > 0.0f) {
             copyGrid2D(g_engine->tR, g_engine->gR);
             copyGrid2D(g_engine->tG, g_engine->gG);
             copyGrid2D(g_engine->tB, g_engine->gB);
-            diffuse(0, g_engine->gR, g_engine->tR, fluid.diffusion, dt_);
-            diffuse(0, g_engine->gG, g_engine->tG, fluid.diffusion, dt_);
-            diffuse(0, g_engine->gB, g_engine->tB, fluid.diffusion, dt_);
+            diffuse(0, g_engine->gR, g_engine->tR, g_engine->fluid.diffusion, dt_);
+            diffuse(0, g_engine->gG, g_engine->tG, g_engine->fluid.diffusion, dt_);
+            diffuse(0, g_engine->gB, g_engine->tB, g_engine->fluid.diffusion, dt_);
         }
 
         copyGrid2D(g_engine->tR, g_engine->gR);

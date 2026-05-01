@@ -24,7 +24,7 @@ namespace flowFields {
 
     // --- Prepare: compute breathing factors from modulators ---
     static void ringFlowPrepare() {
-        const ModConfig& breatheMod = ringFlow.modBreathe;
+        const ModConfig& breatheMod = g_engine->ringFlow.modBreathe;
 
         const uint8_t innerTimer = breatheMod.modTimer;
         const uint8_t midTimer   = breatheMod.modTimer + 1;
@@ -72,7 +72,7 @@ namespace flowFields {
         const float soft2 = fmaxf(0.035f, 0.080f * ringBreatheMid);
 
         const float midAngular =
-            0.18f * (ringFlow.innerSwirl + ringFlow.outerSwirl);
+            0.18f * (g_engine->ringFlow.innerSwirl + g_engine->ringFlow.outerSwirl);
 
         // Snapshot live grid to scratch buffer
         for (int y = 0; y < g_engine->_height; y++) {
@@ -101,11 +101,11 @@ namespace flowFields {
                 const float w_outer = s2;
 
                 const float ang =
-                    ringFlow.innerSwirl * w_inner +
+                    g_engine->ringFlow.innerSwirl * w_inner +
                     midAngular          * w_mid +
-                    ringFlow.outerSwirl * w_outer;
+                    g_engine->ringFlow.outerSwirl * w_outer;
 
-                const float drift = ringFlow.midDrift * w_mid;
+                const float drift = g_engine->ringFlow.midDrift * w_mid;
 
                 const float sample_r = clampf(r - drift, 0.0f, maxClamp);
 

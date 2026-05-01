@@ -32,9 +32,9 @@ namespace flowFields {
         // 1) Plumbing: assign modulation channels
         // -----------------------------------------------------------------
 
-        const ModConfig& angularStepMod = spiral.modAngularStep;
-        const ModConfig& radialStepMod = spiral.modRadialStep;
-        const ModConfig& blendFactorMod = spiral.modBlendFactor;
+        const ModConfig& angularStepMod = g_engine->spiral.modAngularStep;
+        const ModConfig& radialStepMod = g_engine->spiral.modRadialStep;
+        const ModConfig& blendFactorMod = g_engine->spiral.modBlendFactor;
 
         const uint8_t angularStepTimer = angularStepMod.modTimer;
         const uint8_t radialStepTimer = radialStepMod.modTimer;
@@ -59,15 +59,15 @@ namespace flowFields {
         // -----------------------------------------------------------------
 
         const float angularStepDepth = 0.85f;
-        workAngularStep = spiral.angularStep * (1.0f + angularStepMod.modLevel * angularStepDepth * angularStepSignal);
+        workAngularStep = g_engine->spiral.angularStep * (1.0f + angularStepMod.modLevel * angularStepDepth * angularStepSignal);
         workAngularStep = fmaxf(0.0f, workAngularStep);
 
         const float radialStepDepth = 0.85f;
-        workRadialStep = spiral.radialStep * (1.0f + radialStepMod.modLevel * radialStepDepth * radialStepSignal);
+        workRadialStep = g_engine->spiral.radialStep * (1.0f + radialStepMod.modLevel * radialStepDepth * radialStepSignal);
         workRadialStep = fmaxf(0.0f, workRadialStep);
 
         const float blendFactorDepth = 0.85f;
-        workBlendFactor = spiral.blendFactor * (1.0f + blendFactorMod.modLevel * blendFactorDepth * blendFactorSignal);
+        workBlendFactor = g_engine->spiral.blendFactor * (1.0f + blendFactorMod.modLevel * blendFactorDepth * blendFactorSignal);
         workBlendFactor = fmaxf(0.0f, fminf(1.0f, workBlendFactor));
 
     }
@@ -86,7 +86,7 @@ namespace flowFields {
         float rStep = workRadialStep;
         float frac  = workBlendFactor;
         float inv   = 1.0f - frac;
-        bool  out   = spiral.outward;
+        bool  out   = g_engine->spiral.outward;
 
         // Copy live grid to scratch buffer
         for (int y = 0; y < g_engine->_height; y++) {

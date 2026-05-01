@@ -21,7 +21,7 @@ namespace flowFields {
         const float scrollY = t * speed;
 
         for (int i = 0; i < count; i++) {
-            const float v = n.noise(i * noiseFlow.noiseFreq * scale, scrollY);
+            const float v = n.noise(i * g_engine->noiseFlow.noiseFreq * scale, scrollY);
             out[i] = clampf(v * amp, -1.0f, 1.0f);
         }
     }
@@ -31,9 +31,9 @@ namespace flowFields {
         // -----------------------------------------------------------------
         // 1) Plumbing: assign paired modulation channels
         // -----------------------------------------------------------------
-        const ModConfig& ampMod   = noiseFlow.modAmp;
-        const ModConfig& speedMod = noiseFlow.modSpeed;
-        const ModConfig& shiftMod = noiseFlow.modShift;
+        const ModConfig& ampMod   = g_engine->noiseFlow.modAmp;
+        const ModConfig& speedMod = g_engine->noiseFlow.modSpeed;
+        const ModConfig& shiftMod = g_engine->noiseFlow.modShift;
 
         const uint8_t xAmpTimer   = ampMod.modTimer;
         const uint8_t yAmpTimer   = ampMod.modTimer + 1;
@@ -82,21 +82,21 @@ namespace flowFields {
 
         // Amplitude: centered multiplicative breathing around base value.
         const float ampDepth = 0.85f;
-        float workXAmp = noiseFlow.xAmp * (1.0f + ampMod.modLevel * ampDepth * xAmpSignal);
-        float workYAmp = noiseFlow.yAmp * (1.0f + ampMod.modLevel * ampDepth * yAmpSignal);
+        float workXAmp = g_engine->noiseFlow.xAmp * (1.0f + ampMod.modLevel * ampDepth * xAmpSignal);
+        float workYAmp = g_engine->noiseFlow.yAmp * (1.0f + ampMod.modLevel * ampDepth * yAmpSignal);
         workXAmp = fmaxf(0.0f, workXAmp);
         workYAmp = fmaxf(0.0f, workYAmp);
 
         // Speed: centered multiplicative breathing around base value.
         // Leave unclamped so low base values can reverse direction.
         const float speedDepth = 0.90f;
-        float workXSpeed = noiseFlow.xSpeed * (1.0f + speedMod.modLevel * speedDepth * xSpeedSignal);
-        float workYSpeed = noiseFlow.ySpeed * (1.0f + speedMod.modLevel * speedDepth * ySpeedSignal);
+        float workXSpeed = g_engine->noiseFlow.xSpeed * (1.0f + speedMod.modLevel * speedDepth * xSpeedSignal);
+        float workYSpeed = g_engine->noiseFlow.ySpeed * (1.0f + speedMod.modLevel * speedDepth * ySpeedSignal);
 
         // Shift: centered multiplicative breathing around base value.
         const float shiftDepth = 0.75f;
-        float workXShift = noiseFlow.xShift * (1.0f + shiftMod.modLevel * shiftDepth * xShiftSignal);
-        float workYShift = noiseFlow.yShift * (1.0f + shiftMod.modLevel * shiftDepth * yShiftSignal);
+        float workXShift = g_engine->noiseFlow.xShift * (1.0f + shiftMod.modLevel * shiftDepth * xShiftSignal);
+        float workYShift = g_engine->noiseFlow.yShift * (1.0f + shiftMod.modLevel * shiftDepth * yShiftSignal);
         // Ensure neither axis fully drops to zero (prevents pure cardinal motion)
         const float minShift = 0.3f;
         workXShift = fmaxf(minShift, workXShift);
@@ -107,10 +107,10 @@ namespace flowFields {
         workYShiftCurrent = workYShift;
 
         sampleProfile2D(g_engine->noise2X, g_engine->t, workXSpeed, workXAmp,
-                        noiseFlow.xFreq, g_engine->_width, g_engine->xProf);
+                        g_engine->noiseFlow.xFreq, g_engine->_width, g_engine->xProf);
 
         sampleProfile2D(g_engine->noise2Y, g_engine->t, workYSpeed, workYAmp,
-                        noiseFlow.yFreq, g_engine->_height, g_engine->yProf);
+                        g_engine->noiseFlow.yFreq, g_engine->_height, g_engine->yProf);
 
     }
 

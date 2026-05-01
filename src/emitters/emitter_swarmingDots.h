@@ -18,11 +18,11 @@ namespace flowFields {
     // swarmSpread controls grouping (0 = clustered, 1 = independent, >1 = wide).
     // Max 5 dots (num_timers=10, 2 timers per dot).
     static void emitSwarmingDots() {
-        const uint8_t n = swarmingDots.numDots;
+        const uint8_t n = g_engine->swarmingDots.numDots;
         const float fNumDots = static_cast<float>(n);
 
-        const ModConfig& spreadMod = swarmingDots.modSwarmSpread;
-        const ModConfig& speedMod  = swarmingDots.modSwarmSpeed;
+        const ModConfig& spreadMod = g_engine->swarmingDots.modSwarmSpread;
+        const ModConfig& speedMod  = g_engine->swarmingDots.modSwarmSpeed;
 
         // -----------------------------------------------------------------
         // 1) Plumbing: configure timer channels
@@ -75,7 +75,7 @@ namespace flowFields {
         float depth = speedMod.modLevel / (1.0f + speedMod.modLevel); // 0..1 asymptote
         depth *= 0.9f;  // max ±90% around base speed
         float speedScale = (1.0f - depth) + (2.0f * depth * speedSignal); // [1-depth, 1+depth]
-        const float currentSpeed = swarmingDots.swarmSpeed * speedScale;
+        const float currentSpeed = g_engine->swarmingDots.swarmSpeed * speedScale;
 
         // Integrated time base to preserve phase continuity under speed changes
         static float swarmTimeMs = 0.0f;
@@ -84,7 +84,7 @@ namespace flowFields {
 
         // Spread modulation adds above the base value
         const float spread =
-            swarmingDots.swarmSpread +
+            g_engine->swarmingDots.swarmSpread +
             (modSpread * spreadMod.modLevel);
 
         // Calculate dot position
@@ -121,7 +121,7 @@ namespace flowFields {
             const float cy = (g_engine->_height - 1) * 0.5f * (1.0f + sy);
 
             const ColorF c = g_engine->rainbow(g_engine->t, g_engine->colorShift, d / fNumDots);
-            g_engine->drawDot(cx, cy, swarmingDots.dotDiam, c.r, c.g, c.b);
+            g_engine->drawDot(cx, cy, g_engine->swarmingDots.dotDiam, c.r, c.g, c.b);
         }
     }
 

@@ -15,13 +15,13 @@ namespace flowFields {
     static void emitLissajousLine() {
         const float cx = (g_engine->_width  - 1) * 0.5f;
         const float cy = (g_engine->_height - 1) * 0.5f;
-        const float amp = lissajous.lineAmp;
+        const float amp = g_engine->lissajous.lineAmp;
 
         // Integrate speed to preserve continuity when lineSpeed changes.
         static float phase = 0.0f;
 
-        const ModConfig& speedMod = lissajous.modLineSpeed;
-        const ModConfig& ampMod  = lissajous.modLineAmp;
+        const ModConfig& speedMod = g_engine->lissajous.modLineSpeed;
+        const ModConfig& ampMod  = g_engine->lissajous.modLineAmp;
 
         // -----------------------------------------------------------------
         // 1) Plumbing: configure timer channels
@@ -38,7 +38,7 @@ namespace flowFields {
 
         const float speedSignal = g_engine->move.directional_noise[speedMod.modTimer];
         const float currentSpeed =
-            lissajous.lineSpeed * (1.0f + speedMod.modLevel * 0.85f * speedSignal);
+            g_engine->lissajous.lineSpeed * (1.0f + speedMod.modLevel * 0.85f * speedSignal);
 
         const float ampSignal = g_engine->move.directional_noise[ampMod.modTimer];
 
@@ -62,13 +62,13 @@ namespace flowFields {
         // 4) Line clamping
         // -----------------------------------------------------------------
 
-        if (lissajous.lineClamp == 1) {
+        if (g_engine->lissajous.lineClamp == 1) {
             // Clamp: pin endpoints to grid edges
             lx1 = clampf(lx1, 0.0f, (float)(g_engine->_width  - 1));
             ly1 = clampf(ly1, 0.0f, (float)(g_engine->_height - 1));
             lx2 = clampf(lx2, 0.0f, (float)(g_engine->_width  - 1));
             ly2 = clampf(ly2, 0.0f, (float)(g_engine->_height - 1));
-        } else if (lissajous.lineClamp == 2) {
+        } else if (g_engine->lissajous.lineClamp == 2) {
             // Tether: keep the nearer endpoint within half-grid of center
             float dx1 = lx1 - cx;
             float dx2 = lx2 - cx;
