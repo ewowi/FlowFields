@@ -22,20 +22,6 @@ namespace flowFields {
     FL_FAST_MATH_BEGIN
     FL_OPTIMIZATION_LEVEL_O3_BEGIN
 
-    struct FluidParams {
-        float viscosity           = 0.0005f;     // velocity diffusion coefficient
-        float diffusion           = 0.0005f;     // dye diffusion coefficient
-        float velocityDissipation = 0.75f;     // per-second velocity decay (0..1, 1=no decay)
-        float dyeDissipation      = 0.25f;     // per-second dye decay (overrides project persistence)
-        float vorticity           = 7.0f;     // confinement strength (0 = disabled)
-        float gravity             = 0.3f;     // uniform vertical force on v
-        uint8_t solverIterations  = 5;        // Jacobi passes per lin_solve
-
-        ModConfig modVelDissip = {0, 0.5f, 0.0f};   // modTimer, modRate, modLevel
-        ModConfig modDyeDissip = {1, 0.5f, 0.0f};
-    };
-
-    FluidParams fluid;
 
     // Working values prepared each frame by fluidPrepare()
     static float workVelDissip = 0.5f;

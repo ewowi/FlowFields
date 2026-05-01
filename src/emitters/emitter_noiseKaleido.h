@@ -11,14 +11,6 @@ namespace flowFields {
     FL_FAST_MATH_BEGIN
     FL_OPTIMIZATION_LEVEL_O3_BEGIN
 
-    struct NoiseKaleidoParams {
-        float driftSpeed = 0.35f;   // noise field drift speed
-        float noiseScale = 0.0375f; // noise zoom level
-        float noiseBand = 0.1f;     // noise band width (pattern density)
-        float kaleidoGamma = 0.65f; // brightness profile exponent
-    };
-
-    NoiseKaleidoParams noiseKaleido;
 
     // 4-octave fbm with early-exit for band rejection.
     // Octaves 4-5 removed: below Nyquist at scale=0.0375 on a 48x32 grid.

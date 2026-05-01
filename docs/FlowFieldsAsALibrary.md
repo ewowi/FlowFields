@@ -802,5 +802,323 @@ The loop is indexing the same `EMITTER_NAMES` array whose order matches the `Emi
 |------|----------|-------|
 | Verify visuals on device with FastLED 4.x | High | Do before merging to `main` |
 | Audio integration steps 2–3 | Medium | Engine audio-data pointer + FastLED-MM loop wiring |
-| Typed cVar storage | Low | Non-float cVars not reachable via `resolveField`; typed overloads needed |
-| `resolveField` two-tier consistency | Low | Shared/cast params have one-frame lag via cVar; could be eliminated by adding fan-out in the binding loop |
+| Typed cVar storage | ✅ Resolved in Session 4 | Engine members now use their natural types; string dispatch in BLE casts explicitly |
+| `resolveField` two-tier consistency | ✅ Resolved in Session 4 | `resolveField` and cVar bridge removed entirely |
+
+---
+
+## Session 4 Retrospective
+
+Session 4 completed a structural simplification that Sessions 2 and 3 had been building toward: the elimination of all cVar globals, all sync functions, all pointer binding, and the engine's string-based parameter API. The result is a cleaner architecture with one, obvious mechanism for setting parameters.
+
+### Motivation — The Two-Mechanism Problem
+
+After Session 3 the engine had two parallel paths for changing a parameter value:
+
+| Consumer | Write path | Read path |
+|----------|-----------|-----------|
+| BLE firmware | `c##parameter` global → `syncFromCVars()` → struct field | `sendEmitterState()` reads `c##parameter` via X-macro |
+| Library consumer (FastLED-MM) | `bindParam(name, &myFloat)` → binding loop in `run()` → struct field | — |
+
+Both paths wrote to the same struct fields that emitters and flows actually read. The cVar globals were purely an intermediate layer that the BLE path couldn't avoid (they were the canonical store) and the library path had to fight around (bindings had to overwrite what `syncFromCVars` just wrote, causing the ordering bug fixed in Session 3).
+
+The presence of two mechanisms had concrete costs:
+- `syncFromCVars()` and `pushDefaultsToCVars()` — ~250 lines of boilerplate that duplicated every parameter assignment, needed to be kept in sync with struct definitions, and was the source of the Session 3 binding bug.
+- The `bindParam` / `resolveField` machinery — string dispatch in `setup()` plus a per-frame binding loop in `run()`.
+- All parameters forced to `float` — `bool`, `uint8_t`, `uint16_t` members had to be shadowed by float cVars, and shared params (e.g. `blendFactor` used by three flow structs) required fan-out logic in `syncFromCVars`.
+- One-frame lag for shared/cast params — the Session 3 retrospective documented this as a known inconsistency in `resolveField`.
+
+### What Changed
+
+#### 1. All param struct types extracted to `FlowFieldsParamTypes.h`
+
+**The problem:** Param structs were defined inside the emitter/flow headers (e.g. `OrbitalDotsParams` in `emitter_orbitalDots.h`). For `FlowFieldsEngine` to own instances of them as members, `FlowFieldsEngine.h` would need to include those headers. But those headers include `FlowFieldsEngine.h` — a circular dependency the preprocessor cannot resolve.
+
+**The fix:** A new `src/FlowFieldsParamTypes.h` contains only the 13 struct type definitions and includes nothing except `flowFieldsTypes.h`. The engine header includes `FlowFieldsParamTypes.h`; the emitter/flow headers include `FlowFieldsEngine.h` as before. The cycle is broken.
+
+This is a standard C++ pattern: types that appear in a class declaration live in a header that has no reverse dependency on that class. The struct definitions themselves are unchanged — the move is purely mechanical.
+
+#### 2. All struct instances moved into `FlowFieldsEngine` as public members
+
+```cpp
+// FlowFieldsEngine.h (public section)
+OrbitalDotsParams  orbitalDots;
+SwarmingDotsParams swarmingDots;
+AudioDotsParams    audioDots;
+LissajousParams    lissajous;
+NoiseKaleidoParams noiseKaleido;
+CubeParams         cube;
+FluidJetParams     fluidJet;
+
+NoiseFlowParams    noiseFlow;
+RadialParams       radial;
+DirectionalParams  directional;
+RingFlowParams     ringFlow;
+SpiralParams       spiral;
+FluidParams        fluid;
+```
+
+The namespace-level singleton instances that existed in each emitter/flow header are removed. Emitter and flow functions already accessed everything through `g_engine` — changing `orbitalDots.orbitSpeed` to `g_engine->orbitalDots.orbitSpeed` throughout those headers was the only mechanical change required.
+
+On emitter or flow change, `run()` resets all structs for that type to their default-constructed values (`orbitalDots = OrbitalDotsParams{};` etc.), replacing `pushDefaultsToCVars()` with direct, zero-overhead initialization.
+
+#### 3. `setParam` / `getParam` / `resolveField` removed from the engine
+
+These three methods are deleted from `FlowFieldsEngine` entirely. The engine no longer has any string-based API. Its public surface is:
+
+- Lifecycle: `setup()`, `run()`, `teardown()`
+- State: all param struct members, `_emitter`, `_flow`, `globalSpeed`, `persistence`, `colorShift`, `useRainbow`
+- Modulators: `calculate_modulators()`
+- Drawing: `drawDot()`, `drawAASubpixelLine()`, etc.
+
+#### 4. All cVar globals removed (except audio)
+
+`parameterSchema.h` previously declared ~70 `inline float c##Xxx` globals covering every engine parameter. These are removed. The file now contains only:
+
+- `cBright`, `cMapping`, `cOverrideMapping`, `cEaseSat`, `cEaseLum` — hardware/display globals owned by `main.cpp`, not the engine
+- All audio cVars (`cAudioGain`, `cNoiseGateOpen`, etc.) — see note below
+- The `PARAMETER_TABLE` X-macro, now reduced to 15 audio/misc entries
+
+`syncFromCVars()` and `pushDefaultsToCVars()` (and the two corresponding flow variants) are deleted with the cVars they served.
+
+**Why audio cVars were not removed:** Audio params (`cAudioGain`, `cNoiseGateOpen`, `cThreshold`, etc.) are not engine parameters — they control the separate audio pipeline (`src/audio/`) which the `FlowFieldsEngine` class has no knowledge of. There are no corresponding `AudioParams` struct members on the engine to move them into. The audio subsystem is deliberately kept outside the library boundary (excluded by `library.json`'s `srcFilter`). Cleaning up the audio cVars is a separate task that belongs to the audio integration work (steps 2–3 of the audio backlog item).
+
+#### 5. String dispatch moved to `bleControl.h` — where it belongs
+
+BLE receives parameters as JSON strings (`{"id":"inOrbitSpeed","val":2.5}`). Some translation between string and struct field is unavoidable. The question is whose responsibility it is.
+
+Previously the engine owned this via `setParam`/`getParam`. Session 4 moves it into `bleControl.h` as two `static` functions: `bleSetEngineParam(name, value)` and `bleGetEngineParam(name)`. These functions contain the same if-chain that `resolveField` did, now writing and reading `g_engine->structName.field` directly:
+
+```cpp
+static void bleSetEngineParam(const char* name, float value) {
+    FlowFieldsEngine* e = g_engine;
+    if (strcasecmp(name, "orbitSpeed") == 0) { e->orbitalDots.orbitSpeed = value; return; }
+    if (strcasecmp(name, "blendFactor") == 0) {
+        e->radial.blendFactor = value;
+        e->directional.blendFactor = value;
+        e->spiral.blendFactor = value;
+        return;
+    }
+    // …
+}
+```
+
+The BLE caller is now explicit about what it is doing: translating a wire-format string into a direct struct-field write. The engine doesn't need to know about strings at all.
+
+**`processNumber()`** strips the "in" prefix and calls `bleSetEngineParam`, then falls through to the PARAMETER_TABLE loop for audio cVars:
+
+```cpp
+if (receivedID.startsWith("in"))
+    bleSetEngineParam(receivedID.c_str() + 2, receivedValue);
+// PARAMETER_TABLE handles audio/misc cVars
+```
+
+**`sendEmitterState()` / `sendFlowState()` / `sendGlobalState()`** call `bleGetEngineParam(paramName)` for each parameter in the lookup table instead of reading cVars via X-macro.
+
+**`processCheckbox()`** sets bool engine members directly:
+
+```cpp
+if (receivedID == "cx21") { g_engine->cube.axisFreeze[0] = receivedValue; }
+if (receivedID == "cx31") { g_engine->spiral.outward = receivedValue; g_engine->radial.outward = receivedValue; }
+if (receivedID == "cx32") { g_engine->useRainbow = receivedValue; }
+```
+
+This also fixes the typed-cVar issue from the Session 3 backlog: `bool outward`, `bool axisFreeze[]`, and `bool useRainbow` are now set as actual bools — no float cast required.
+
+#### 6. `FlowFieldsEffect.h` — `onUpdate()` + single-line `loop()`
+
+The example uses `onUpdate(name)` — a projectMM callback fired only when a control actually changes value — to push new values into the engine. `loop()` is reduced to a single call:
+
+```cpp
+void onUpdate(const char* /*name*/) override {
+    engine_._emitter    = emitterIdx_;      // uint8_t — no cast needed
+    engine_._flow       = flowIdx_;         // uint8_t — no cast needed
+    engine_.globalSpeed = globalSpeed_;
+    engine_.orbitalDots.numDots  = numDots_;  // uint8_t — no cast needed
+    engine_.swarmingDots.numDots = numDots_;
+    engine_.orbitalDots.orbitSpeed = orbitSpeed_;
+    engine_.noiseFlow.xSpeed      = xSpeed_;
+    // … all other struct-field assignments …
+}
+
+void loop() override { engine_.run(leds); }
+```
+
+Because `onUpdate` is called outside the render hot path (only on user interaction or preset load, not 60 × per second), there is no per-frame overhead for parameter writes. The private members `emitterIdx_`, `flowIdx_`, and `numDots_` are declared as `uint8_t` rather than `float` — they match the struct field types exactly so no cast is needed when assigning into the engine.
+
+The `bindParam` mechanism from Sessions 2–3 is entirely removed from the example.
+
+### Definition of Done
+
+| Task | Status | Notes |
+|------|--------|-------|
+| `FlowFieldsParamTypes.h` — 13 struct type definitions | ✅ | No engine dependency; breaks circular include |
+| Struct instances added to `FlowFieldsEngine` as public members | ✅ | Replaces namespace-level singletons in emitter/flow headers |
+| All 13 emitter/flow headers updated to `g_engine->struct.field` | ✅ | Mechanical find-replace; logic unchanged |
+| `setParam` / `getParam` / `resolveField` removed from engine | ✅ | Engine has no string-based API |
+| All engine cVar globals removed from `parameterSchema.h` | ✅ | ~70 `inline float c##Xxx` declarations deleted |
+| `PARAMETER_TABLE` reduced to audio/misc (15 entries) | ✅ | Engine params no longer go through X-macro |
+| `syncFromCVars` / `pushDefaultsToCVars` implementations deleted | ✅ | ~250 lines of boilerplate removed from `flowFieldsEngine.cpp` |
+| `bleSetEngineParam` / `bleGetEngineParam` added to `bleControl.h` | ✅ | Full string→field mapping owned by BLE, not the engine |
+| `processNumber` updated to call `bleSetEngineParam` | ✅ | Engine params routed directly; audio/misc still via PARAMETER_TABLE |
+| `sendEmitterState` / `sendFlowState` / `sendGlobalState` updated | ✅ | Read via `bleGetEngineParam`; no X-macro cVar reads |
+| `processCheckbox` updated to set bool engine members directly | ✅ | `axisFreeze[]`, `outward`, `useRainbow` set as bools |
+| `FlowFieldsEffect.h` `onUpdate()` — direct member writes on control change | ✅ | Assignments out of hot path; `loop()` is one line; `uint8_t` members require no cast |
+
+### Benefits
+
+**For the engine's public API:**
+
+The engine is now a plain C++ class with typed public members. Any consumer — BLE, FastLED-MM, a test harness, a future MIDI controller — reads and writes it the same way:
+
+```cpp
+engine.orbitalDots.orbitSpeed = 2.5f;   // obvious, immediate, no overhead
+engine._emitter = EMITTER_SWARMINGDOTS;
+```
+
+No methods to learn, no string names to remember, no float restriction on parameter types.
+
+**For the BLE firmware (unchanged behaviour, simpler code):**
+
+The BLE path was always: receive string → find parameter → write value. That logic now lives in `bleControl.h` where it belongs, expressed as direct struct-field writes. The behaviour is identical. The complexity is now local to the layer that introduced it.
+
+**For library consumers:**
+
+The `bindParam` pattern from Sessions 2–3 is gone. There is nothing to bind and no setup-time overhead. A FastLED-MM module pushes control values into engine struct fields in `onUpdate()` — called only when a slider actually moves, not every frame. `loop()` is a single line. That is the same direct-write pattern the BLE firmware uses — one mechanism for everyone.
+
+**For maintainability:**
+
+Adding a new parameter now requires two things: add a field to the relevant param struct in `FlowFieldsParamTypes.h`, and add two lines (one set, one get) to the string tables in `bleControl.h`. No cVar declaration, no X-macro entry, no `syncFromCVars` line, no `pushDefaultsToCVars` line. The old process was a 5-file change; the new process is a 2-file change.
+
+**Type correctness:**
+
+Boolean and integer parameters (`outward`, `axisFreeze[]`, `lineClamp`, `solverIterations`) are now their natural types throughout. The `float`-everywhere constraint was an artefact of the `resolveCVar`/`bindParam` returning `float*`. `bleSetEngineParam` can cast explicitly (`(uint8_t)value`, `(bool)value`) at the BLE boundary where the type conversion is intentional, rather than silently throughout the engine.
+
+### Trade-offs and Honest Assessment
+
+**The string dispatch table still exists** — it moved from the engine to `bleControl.h`. This is the right location for it: it is BLE's responsibility to translate wire-format strings into typed C++ writes. The engine should not carry this dependency. .
+
+**`FlowFieldsParamTypes.h` is an added file.** The 13 struct definitions are no longer co-located with their emitter/flow functions. This is the minimum cost of having the engine own typed instances of each struct — the circular dependency that makes this necessary is explained in the [session 4 motivation section above](#session-4-retrospective). The structs themselves are unchanged; only their location in the source tree moved.
+
+**The example's `loop()` is a single line.** The `onUpdate()` callback handles all struct-field assignments when controls change — not on every frame. `loop()` is just `engine_.run(leds)`. This is cleaner than the Session 2 bindParam approach (which still required 40 `bindParam` calls in `setup()` and had a hidden ordering hazard) and cleaner than writing all assignments in `loop()` every frame. Param writes happen exactly as often as the user moves a slider.
+
+### Remaining Backlog (updated)
+
+| Item | Priority | Notes |
+|------|----------|-------|
+| Verify visuals on device with FastLED 4.x | High | Do before merging to `main` |
+| Audio integration steps 2–3 | Medium | Engine audio-data pointer + FastLED-MM loop wiring |
+| `FlowFieldsEffect.h` `onUpdate()` refactor | ✅ Done | Implemented in Session 4; `loop()` is one line |
+
+---
+
+## Possible Session 5: Dynamic Parameter Visibility
+
+### Problem Statement
+
+The engine supports 8 emitters × 6 flows = 48 distinct combinations. Each combination has a different relevant parameter set. The current `FlowFieldsEffect.h` registers all 35 controls unconditionally in `setup()` — but at any active combination only 8–15 of those controls are meaningful. The other 20–27 are visible but irrelevant, creating UI noise and making the effect harder to use.
+
+### Parameter Relevance
+
+**Global — always relevant (5 controls):**
+emitter (select), flow (select), globalSpeed, persistence, colorShift
+
+**Emitter-specific:**
+
+| Emitter | Relevant params |
+|---------|----------------|
+| orbitaldots | numDots, dotDiam, orbitSpeed, orbitDiam |
+| swarmingdots | numDots, dotDiam, swarmSpeed, swarmSpread |
+| audiodots | *(none currently exposed)* |
+| lissajous | lineSpeed, lineAmp |
+| borderrect | *(none)* |
+| noisekaleido | driftSpeed, noiseScale, noiseBand |
+| cube | scale, rotateSpeedX, rotateSpeedY, rotateSpeedZ |
+| fluidjet | jetForce, jetAngle |
+
+**Flow-specific:**
+
+| Flow | Relevant params |
+|------|----------------|
+| noise | xSpeed, ySpeed, xShift, yShift, xFreq, yFreq |
+| radial | blendFactor |
+| directional | blendFactor |
+| rings | innerSwirl, outerSwirl, midDrift |
+| spiral | angularStep, blendFactor |
+| fluid | viscosity, vorticity, gravity |
+
+Note that `numDots`/`dotDiam` are shared between two emitters, and `blendFactor` is shared across three flows. The groupings are already annotated as comments in `FlowFieldsEffect.h`.
+
+### Design Options
+
+**Option A — Dynamic control registration** *(recommended if projectMM adds the API)*
+
+Detect emitter/flow change in `onUpdate()`, call `clearControls()`, then re-register only the relevant subset. Control values are not lost — they live in the private members, not in projectMM.
+
+```cpp
+// In onUpdate():
+if (emitterIdx_ != lastEmitterIdx_ || flowIdx_ != lastFlowIdx_) {
+    registerControls();   // clearControls() + targeted addControl() calls
+    lastEmitterIdx_ = emitterIdx_;
+    lastFlowIdx_    = flowIdx_;
+}
+```
+
+The `registerControls()` pseudocode for this is already in `FlowFieldsEffect.h`. Requires projectMM to expose `clearControls()` (or equivalent). Pro: minimal UI, exactly the right controls shown. Con: API not yet available; emitter/flow selectors must always survive the clear.
+
+**Option B — Visibility toggling** *(if projectMM adds `setControlVisible`)*
+
+Register all controls once in `setup()`. Call `setControlVisible(name, bool)` from `onUpdate()` whenever emitter or flow changes. Pro: simpler than A, no value loss risk. Con: same API requirement; all control memory still allocated.
+
+**Option C — One effect class per emitter** *(works today, no new API needed)*
+
+Eight separate classes (`OrbitalDotsEffect`, `SwarmingDotsEffect`, …), each hard-coding its emitter and registering only its emitter-specific params. All share one `FlowFieldsEngine` instance (static or via pointer). A flow selector inside each class handles flow-param visibility dynamically (or via a second level of Option A/B).
+
+- Pro: works without any new projectMM API; each class is small and focused.
+- Con: 8 classes; the user switches effects to switch emitters; flow-param problem remains per class.
+- Taking this to its limit — one class per emitter/flow combo — gives 48 effects. That eliminates all selectors and makes each effect fully self-describing, but is impractical to register and maintain.
+
+**Option D — Composite modules** *(future projectMM architecture)*
+
+An `EmitterModule` owns the emitter selector and emitter-specific params. A `FlowModule` owns the flow selector and flow-specific params. Both share one `FlowFieldsEngine` instance. The framework composes their outputs. Pro: maximum modularity, minimal per-module surface area. Con: requires projectMM to support module composition and shared engine state.
+
+### Consequences for the Engine API
+
+Session 5 is **purely additive to the consumer layer** — the engine API (`FlowFieldsEngine` public struct members) does not change. All options write into the same struct fields; only `FlowFieldsEffect.h` changes shape. This is a direct benefit of the Session 4 cleanup: the single direct-write mechanism makes any of the above options straightforward to implement without touching the engine.
+
+### BLE Already Solves This — at the UI Layer
+
+The BLE firmware has implemented dynamic parameter visibility since before Session 1. `sendEmitterState()` calls `getEmitterParams(g_engine->_emitter)`, which looks up `EMITTER_PARAM_LOOKUP[]` for the currently active emitter and returns only that emitter's parameter names. It then reads their values via `bleGetEngineParam()` and sends a compact JSON document to the web UI containing only the relevant parameters. `sendFlowState()` does the same via `FLOW_PARAM_LOOKUP[]`.
+
+The web UI reconstructs its slider panel from that JSON — so switching emitter or flow causes the UI to show *exactly* the relevant sliders, with no extras.
+
+This works easily in the BLE case because the "UI" is a browser page: showing and hiding DOM elements is free. projectMM/FastLED-MM has the harder version of the problem because controls are registered C++ objects with allocated state, not DOM nodes.
+
+The key takeaway for Session 5: the same two lookup tables that drive `sendEmitterState()` and `sendFlowState()` could also drive `registerControls()` in `FlowFieldsEffect.h`, making the FastLED-MM version data-driven rather than the hardcoded switch/case shown in the current pseudocode:
+
+```cpp
+// Data-driven alternative to the switch/case pseudocode:
+// void registerControls() {
+//     clearControls();
+//     // ... globals and selectors ...
+//     const EmitterParamEntry* ep = getEmitterParams(emitterIdx_);
+//     if (ep) for (uint8_t i = 0; i < ep->count; i++)
+//         addControlByName(ep->params[i]);   // hypothetical projectMM API
+//     const FlowParamEntry* fp = getFlowParams(flowIdx_);
+//     if (fp) for (uint8_t i = 0; i < fp->count; i++)
+//         addControlByName(fp->params[i]);
+// }
+```
+
+This would make `registerControls()` a ~15-line function regardless of how many emitters or flows are added in the future.
+
+### What Already Exists
+
+- `FlowFieldsEffect.h` `setup()` — controls annotated with emitter/flow groupings as inline comments
+- `FlowFieldsEffect.h` — `registerControls()` pseudocode (complete switch/case skeleton) ready to activate when projectMM adds `clearControls()`
+- `parameterSchema.h` — `EMITTER_PARAM_LOOKUP[]` and `FLOW_PARAM_LOOKUP[]` — the same tables the BLE send functions use; they are the canonical data source for per-emitter/flow parameter sets
+- `bleControl.h` — `sendEmitterState()` / `sendFlowState()` — working reference implementation of the dynamic-visibility pattern, already in production on the BLE side
+
+### Recommendation
+
+Wait for projectMM to expose `clearControls()` or `setControlVisible()`, then activate Option A using the existing pseudocode in `FlowFieldsEffect.h` — ideally rewritten as the data-driven loop above rather than the switch/case, so it stays in sync with `EMITTER_PARAM_LOOKUP[]` / `FLOW_PARAM_LOOKUP[]` automatically. If faster resolution is needed, Option C (one class per emitter) works today and is the natural stepping stone toward the composable Option D architecture.

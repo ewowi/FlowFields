@@ -244,31 +244,17 @@ void sendEmitterState() {
        }
    }
 
-   // Add parameter values to JSON based on visualizer params
+   // Add parameter values to JSON via bleGetEngineParam
    for (uint8_t i = 0; i < emitterParams->count; i++) {
        char paramName[32];
        ::strcpy(paramName, (char*)pgm_read_ptr(&emitterParams->params[i]));
-
-       bool paramFound = false;
-       // Use X-macro to match parameter names and add values
-       // Handle case-insensitive comparison for parameter names
-       #define X(type, parameter, def) \
-           if (strcasecmp(paramName, #parameter) == 0) { \
-               params[paramName] = c##parameter; \
-               if (debug) { \
-                   Serial.print("Added parameter "); \
-                   Serial.print(paramName); \
-                   Serial.print(": "); \
-                   Serial.println(c##parameter); \
-               } \
-               paramFound = true; \
-           }
-       PARAMETER_TABLE
-       #undef X
-
-       if (!paramFound) {
-           Serial.print("Warning: Parameter not found in X-macro table: ");
-           Serial.println(paramName);
+       float val = bleGetEngineParam(paramName);
+       params[paramName] = val;
+       if (debug) {
+           Serial.print("Added parameter ");
+           Serial.print(paramName);
+           Serial.print(": ");
+           Serial.println(val);
        }
    }
 
@@ -334,31 +320,17 @@ void sendFlowState() {
        }
    }
 
-   // Add parameter values to JSON based on visualizer params
+   // Add parameter values to JSON via bleGetEngineParam
    for (uint8_t i = 0; i < flowParams->count; i++) {
        char paramName[32];
        ::strcpy(paramName, (char*)pgm_read_ptr(&flowParams->params[i]));
-
-       bool paramFound = false;
-       // Use X-macro to match parameter names and add values
-       // Handle case-insensitive comparison for parameter names
-       #define X(type, parameter, def) \
-           if (strcasecmp(paramName, #parameter) == 0) { \
-               params[paramName] = c##parameter; \
-               if (debug) { \
-                   Serial.print("Added parameter "); \
-                   Serial.print(paramName); \
-                   Serial.print(": "); \
-                   Serial.println(c##parameter); \
-               } \
-               paramFound = true; \
-           }
-       PARAMETER_TABLE
-       #undef X
-
-       if (!paramFound) {
-           Serial.print("Warning: Parameter not found in X-macro table: ");
-           Serial.println(paramName);
+       float val = bleGetEngineParam(paramName);
+       params[paramName] = val;
+       if (debug) {
+           Serial.print("Added parameter ");
+           Serial.print(paramName);
+           Serial.print(": ");
+           Serial.println(val);
        }
    }
 
@@ -395,20 +367,7 @@ void sendGlobalState() {
    for (uint8_t i = 0; i < GLOBAL_PARAM_COUNT; i++) {
        char paramName[32];
        ::strcpy(paramName, (char*)pgm_read_ptr(&GLOBAL_PARAMS[i]));
-
-       bool paramFound = false;
-       #define X(type, parameter, def) \
-           if (strcasecmp(paramName, #parameter) == 0) { \
-               params[paramName] = c##parameter; \
-               paramFound = true; \
-           }
-       PARAMETER_TABLE
-       #undef X
-
-       if (!paramFound) {
-           Serial.print("Warning: Global param not found: ");
-           Serial.println(paramName);
-       }
+       params[paramName] = bleGetEngineParam(paramName);
    }
 
    ArduinoJson::JsonDocument envelope;
@@ -482,6 +441,251 @@ void sendBusState() {
 }
 
 
+// ── BLE string-to-member mapping ─────────────────────────────────────────────
+// String dispatch lives here in bleControl, not in the engine.
+// Library consumers (FastLED-MM, etc.) set engine members directly.
+
+static void bleSetEngineParam(const char* name, float value) {
+    using namespace flowFields;
+    FlowFieldsEngine* e = g_engine;
+    // Selection (triggers reset-on-change logic in run())
+    if (strcasecmp(name, "emitter")              == 0) { e->_emitter = (uint8_t)value; return; }
+    if (strcasecmp(name, "flow")                 == 0) { e->_flow    = (uint8_t)value; return; }
+    // Global
+    if (strcasecmp(name, "globalSpeed")          == 0) { e->globalSpeed = value; return; }
+    if (strcasecmp(name, "colorShift")           == 0) { e->colorShift  = value; return; }
+    // persistence split: coarse int part + fine fractional part
+    if (strcasecmp(name, "persistence")          == 0) { e->persistence = floorf(value) + (e->persistence - floorf(e->persistence)); return; }
+    if (strcasecmp(name, "persistFine")          == 0) { e->persistence = floorf(e->persistence) + value; return; }
+    // Shared across emitters
+    if (strcasecmp(name, "numDots")              == 0) { e->orbitalDots.numDots = (uint8_t)value; e->swarmingDots.numDots = (uint8_t)value; return; }
+    if (strcasecmp(name, "dotDiam")              == 0) { e->orbitalDots.dotDiam = value; e->swarmingDots.dotDiam = value; return; }
+    // Shared across flows
+    if (strcasecmp(name, "blendFactor")          == 0) { e->radial.blendFactor = value; e->directional.blendFactor = value; e->spiral.blendFactor = value; return; }
+    if (strcasecmp(name, "radialStep")           == 0) { e->radial.radialStep  = value; e->spiral.radialStep = value; return; }
+    // uint8_t fields (arrive as float from JSON)
+    if (strcasecmp(name, "lineClamp")            == 0) { e->lissajous.lineClamp = (uint8_t)value; return; }
+    if (strcasecmp(name, "solverIterations")     == 0) { e->fluid.solverIterations = (uint8_t)value; return; }
+    // OrbitalDots
+    if (strcasecmp(name, "orbitSpeed")           == 0) { e->orbitalDots.orbitSpeed = value; return; }
+    if (strcasecmp(name, "orbitDiam")            == 0) { e->orbitalDots.orbitDiam  = value; return; }
+    if (strcasecmp(name, "modOrbitSpeedRate")    == 0) { e->orbitalDots.modOrbitSpeed.modRate  = value; return; }
+    if (strcasecmp(name, "modOrbitSpeedLevel")   == 0) { e->orbitalDots.modOrbitSpeed.modLevel = value; return; }
+    if (strcasecmp(name, "modOrbitDiamRate")     == 0) { e->orbitalDots.modOrbitDiam.modRate   = value; return; }
+    if (strcasecmp(name, "modOrbitDiamLevel")    == 0) { e->orbitalDots.modOrbitDiam.modLevel  = value; return; }
+    // SwarmingDots
+    if (strcasecmp(name, "swarmSpeed")           == 0) { e->swarmingDots.swarmSpeed = value; return; }
+    if (strcasecmp(name, "swarmSpread")          == 0) { e->swarmingDots.swarmSpread = value; return; }
+    if (strcasecmp(name, "modSwarmSpeedRate")    == 0) { e->swarmingDots.modSwarmSpeed.modRate   = value; return; }
+    if (strcasecmp(name, "modSwarmSpeedLevel")   == 0) { e->swarmingDots.modSwarmSpeed.modLevel  = value; return; }
+    if (strcasecmp(name, "modSwarmSpreadRate")   == 0) { e->swarmingDots.modSwarmSpread.modRate  = value; return; }
+    if (strcasecmp(name, "modSwarmSpreadLevel")  == 0) { e->swarmingDots.modSwarmSpread.modLevel = value; return; }
+    // Lissajous
+    if (strcasecmp(name, "lineSpeed")            == 0) { e->lissajous.lineSpeed = value; return; }
+    if (strcasecmp(name, "lineAmp")              == 0) { e->lissajous.lineAmp   = value; return; }
+    if (strcasecmp(name, "modLineSpeedRate")     == 0) { e->lissajous.modLineSpeed.modRate  = value; return; }
+    if (strcasecmp(name, "modLineSpeedLevel")    == 0) { e->lissajous.modLineSpeed.modLevel = value; return; }
+    if (strcasecmp(name, "modLineAmpRate")       == 0) { e->lissajous.modLineAmp.modRate    = value; return; }
+    if (strcasecmp(name, "modLineAmpLevel")      == 0) { e->lissajous.modLineAmp.modLevel   = value; return; }
+    // NoiseKaleido
+    if (strcasecmp(name, "driftSpeed")           == 0) { e->noiseKaleido.driftSpeed  = value; return; }
+    if (strcasecmp(name, "noiseScale")           == 0) { e->noiseKaleido.noiseScale  = value; return; }
+    if (strcasecmp(name, "noiseBand")            == 0) { e->noiseKaleido.noiseBand   = value; return; }
+    if (strcasecmp(name, "kaleidoGamma")         == 0) { e->noiseKaleido.kaleidoGamma = value; return; }
+    // Cube
+    if (strcasecmp(name, "scale")                == 0) { e->cube.scale = value; return; }
+    if (strcasecmp(name, "rotateSpeedX")         == 0) { e->cube.rotateSpeed[0] = value; return; }
+    if (strcasecmp(name, "rotateSpeedY")         == 0) { e->cube.rotateSpeed[1] = value; return; }
+    if (strcasecmp(name, "rotateSpeedZ")         == 0) { e->cube.rotateSpeed[2] = value; return; }
+    if (strcasecmp(name, "modScaleRate")         == 0) { e->cube.modScale.modRate  = value; return; }
+    if (strcasecmp(name, "modScaleLevel")        == 0) { e->cube.modScale.modLevel = value; return; }
+    if (strcasecmp(name, "modRotateSpeedXRate")  == 0) { e->cube.modRotateSpeedX.modRate  = value; return; }
+    if (strcasecmp(name, "modRotateSpeedXLevel") == 0) { e->cube.modRotateSpeedX.modLevel = value; return; }
+    if (strcasecmp(name, "modRotateSpeedYRate")  == 0) { e->cube.modRotateSpeedY.modRate  = value; return; }
+    if (strcasecmp(name, "modRotateSpeedYLevel") == 0) { e->cube.modRotateSpeedY.modLevel = value; return; }
+    if (strcasecmp(name, "modRotateSpeedZRate")  == 0) { e->cube.modRotateSpeedZ.modRate  = value; return; }
+    if (strcasecmp(name, "modRotateSpeedZLevel") == 0) { e->cube.modRotateSpeedZ.modLevel = value; return; }
+    // FluidJet
+    if (strcasecmp(name, "jetDensity")           == 0) { e->fluidJet.jetDensity  = value; return; }
+    if (strcasecmp(name, "jetForce")             == 0) { e->fluidJet.jetForce    = value; return; }
+    if (strcasecmp(name, "jetRadius")            == 0) { e->fluidJet.jetRadius   = value; return; }
+    if (strcasecmp(name, "jetSpread")            == 0) { e->fluidJet.jetSpread   = value; return; }
+    if (strcasecmp(name, "jetAngle")             == 0) { e->fluidJet.jetAngle    = value; return; }
+    if (strcasecmp(name, "jetHueSpeed")          == 0) { e->fluidJet.jetHueSpeed = value; return; }
+    if (strcasecmp(name, "modJetForceRate")      == 0) { e->fluidJet.modJetForce.modRate  = value; return; }
+    if (strcasecmp(name, "modJetForceLevel")     == 0) { e->fluidJet.modJetForce.modLevel = value; return; }
+    if (strcasecmp(name, "modAngleRate")         == 0) { e->fluidJet.modAngle.modRate     = value; return; }
+    if (strcasecmp(name, "modAngleLevel")        == 0) { e->fluidJet.modAngle.modLevel    = value; return; }
+    // NoiseFlow
+    if (strcasecmp(name, "xSpeed")               == 0) { e->noiseFlow.xSpeed = value; return; }
+    if (strcasecmp(name, "ySpeed")               == 0) { e->noiseFlow.ySpeed = value; return; }
+    if (strcasecmp(name, "xAmp")                 == 0) { e->noiseFlow.xAmp   = value; return; }
+    if (strcasecmp(name, "yAmp")                 == 0) { e->noiseFlow.yAmp   = value; return; }
+    if (strcasecmp(name, "xFreq")                == 0) { e->noiseFlow.xFreq  = value; return; }
+    if (strcasecmp(name, "yFreq")                == 0) { e->noiseFlow.yFreq  = value; return; }
+    if (strcasecmp(name, "xShift")               == 0) { e->noiseFlow.xShift = value; return; }
+    if (strcasecmp(name, "yShift")               == 0) { e->noiseFlow.yShift = value; return; }
+    if (strcasecmp(name, "modAmpRate")           == 0) { e->noiseFlow.modAmp.modRate    = value; return; }
+    if (strcasecmp(name, "modAmpLevel")          == 0) { e->noiseFlow.modAmp.modLevel   = value; return; }
+    if (strcasecmp(name, "modSpeedRate")         == 0) { e->noiseFlow.modSpeed.modRate  = value; return; }
+    if (strcasecmp(name, "modSpeedLevel")        == 0) { e->noiseFlow.modSpeed.modLevel = value; return; }
+    if (strcasecmp(name, "modShiftRate")         == 0) { e->noiseFlow.modShift.modRate  = value; return; }
+    if (strcasecmp(name, "modShiftLevel")        == 0) { e->noiseFlow.modShift.modLevel = value; return; }
+    // Directional
+    if (strcasecmp(name, "windStep")             == 0) { e->directional.windStep    = value; return; }
+    if (strcasecmp(name, "rotateSpeed")          == 0) { e->directional.rotateSpeed = value; return; }
+    if (strcasecmp(name, "waveAmp")              == 0) { e->directional.waveAmp     = value; return; }
+    if (strcasecmp(name, "waveFreq")             == 0) { e->directional.waveFreq    = value; return; }
+    if (strcasecmp(name, "waveSpeed")            == 0) { e->directional.waveSpeed   = value; return; }
+    // RingFlow
+    if (strcasecmp(name, "innerSwirl")           == 0) { e->ringFlow.innerSwirl = value; return; }
+    if (strcasecmp(name, "outerSwirl")           == 0) { e->ringFlow.outerSwirl = value; return; }
+    if (strcasecmp(name, "midDrift")             == 0) { e->ringFlow.midDrift   = value; return; }
+    if (strcasecmp(name, "modBreatheRate")       == 0) { e->ringFlow.modBreathe.modRate  = value; return; }
+    if (strcasecmp(name, "modBreatheLevel")      == 0) { e->ringFlow.modBreathe.modLevel = value; return; }
+    // Spiral
+    if (strcasecmp(name, "angularStep")          == 0) { e->spiral.angularStep = value; return; }
+    if (strcasecmp(name, "modAngularStepRate")   == 0) { e->spiral.modAngularStep.modRate   = value; return; }
+    if (strcasecmp(name, "modAngularStepLevel")  == 0) { e->spiral.modAngularStep.modLevel  = value; return; }
+    if (strcasecmp(name, "modRadialStepRate")    == 0) { e->spiral.modRadialStep.modRate    = value; return; }
+    if (strcasecmp(name, "modRadialStepLevel")   == 0) { e->spiral.modRadialStep.modLevel   = value; return; }
+    if (strcasecmp(name, "modBlendFactorRate")   == 0) { e->spiral.modBlendFactor.modRate   = value; return; }
+    if (strcasecmp(name, "modBlendFactorLevel")  == 0) { e->spiral.modBlendFactor.modLevel  = value; return; }
+    // Fluid
+    if (strcasecmp(name, "viscosity")            == 0) { e->fluid.viscosity             = value; return; }
+    if (strcasecmp(name, "diffusion")            == 0) { e->fluid.diffusion             = value; return; }
+    if (strcasecmp(name, "velocityDissipation")  == 0) { e->fluid.velocityDissipation   = value; return; }
+    if (strcasecmp(name, "dyeDissipation")       == 0) { e->fluid.dyeDissipation        = value; return; }
+    if (strcasecmp(name, "vorticity")            == 0) { e->fluid.vorticity             = value; return; }
+    if (strcasecmp(name, "gravity")              == 0) { e->fluid.gravity               = value; return; }
+    if (strcasecmp(name, "modVelDissipRate")     == 0) { e->fluid.modVelDissip.modRate  = value; return; }
+    if (strcasecmp(name, "modVelDissipLevel")    == 0) { e->fluid.modVelDissip.modLevel = value; return; }
+    if (strcasecmp(name, "modDyeDissipRate")     == 0) { e->fluid.modDyeDissip.modRate  = value; return; }
+    if (strcasecmp(name, "modDyeDissipLevel")    == 0) { e->fluid.modDyeDissip.modLevel = value; return; }
+}
+
+static float bleGetEngineParam(const char* name) {
+    using namespace flowFields;
+    FlowFieldsEngine* e = g_engine;
+    // Global
+    if (strcasecmp(name, "globalSpeed")          == 0) return e->globalSpeed;
+    if (strcasecmp(name, "colorShift")           == 0) return e->colorShift;
+    // persistence split
+    if (strcasecmp(name, "persistence")          == 0) return floorf(e->persistence);
+    if (strcasecmp(name, "persistFine")          == 0) return e->persistence - floorf(e->persistence);
+    // Shared params — return values from both sides (they're kept in sync by bleSetEngineParam)
+    if (strcasecmp(name, "numDots")              == 0) return (float)e->orbitalDots.numDots;
+    if (strcasecmp(name, "dotDiam")              == 0) return e->orbitalDots.dotDiam;
+    if (strcasecmp(name, "blendFactor")          == 0) {
+        switch (e->activeFlow) {
+            case FLOW_DIRECTIONAL: return e->directional.blendFactor;
+            case FLOW_SPIRAL:      return e->spiral.blendFactor;
+            default:               return e->radial.blendFactor;
+        }
+    }
+    if (strcasecmp(name, "radialStep")           == 0) return (e->activeFlow == FLOW_SPIRAL) ? e->spiral.radialStep : e->radial.radialStep;
+    // uint8_t fields
+    if (strcasecmp(name, "lineClamp")            == 0) return (float)e->lissajous.lineClamp;
+    if (strcasecmp(name, "solverIterations")     == 0) return (float)e->fluid.solverIterations;
+    // OrbitalDots
+    if (strcasecmp(name, "orbitSpeed")           == 0) return e->orbitalDots.orbitSpeed;
+    if (strcasecmp(name, "orbitDiam")            == 0) return e->orbitalDots.orbitDiam;
+    if (strcasecmp(name, "modOrbitSpeedRate")    == 0) return e->orbitalDots.modOrbitSpeed.modRate;
+    if (strcasecmp(name, "modOrbitSpeedLevel")   == 0) return e->orbitalDots.modOrbitSpeed.modLevel;
+    if (strcasecmp(name, "modOrbitDiamRate")     == 0) return e->orbitalDots.modOrbitDiam.modRate;
+    if (strcasecmp(name, "modOrbitDiamLevel")    == 0) return e->orbitalDots.modOrbitDiam.modLevel;
+    // SwarmingDots
+    if (strcasecmp(name, "swarmSpeed")           == 0) return e->swarmingDots.swarmSpeed;
+    if (strcasecmp(name, "swarmSpread")          == 0) return e->swarmingDots.swarmSpread;
+    if (strcasecmp(name, "modSwarmSpeedRate")    == 0) return e->swarmingDots.modSwarmSpeed.modRate;
+    if (strcasecmp(name, "modSwarmSpeedLevel")   == 0) return e->swarmingDots.modSwarmSpeed.modLevel;
+    if (strcasecmp(name, "modSwarmSpreadRate")   == 0) return e->swarmingDots.modSwarmSpread.modRate;
+    if (strcasecmp(name, "modSwarmSpreadLevel")  == 0) return e->swarmingDots.modSwarmSpread.modLevel;
+    // Lissajous
+    if (strcasecmp(name, "lineSpeed")            == 0) return e->lissajous.lineSpeed;
+    if (strcasecmp(name, "lineAmp")              == 0) return e->lissajous.lineAmp;
+    if (strcasecmp(name, "modLineSpeedRate")     == 0) return e->lissajous.modLineSpeed.modRate;
+    if (strcasecmp(name, "modLineSpeedLevel")    == 0) return e->lissajous.modLineSpeed.modLevel;
+    if (strcasecmp(name, "modLineAmpRate")       == 0) return e->lissajous.modLineAmp.modRate;
+    if (strcasecmp(name, "modLineAmpLevel")      == 0) return e->lissajous.modLineAmp.modLevel;
+    // NoiseKaleido
+    if (strcasecmp(name, "driftSpeed")           == 0) return e->noiseKaleido.driftSpeed;
+    if (strcasecmp(name, "noiseScale")           == 0) return e->noiseKaleido.noiseScale;
+    if (strcasecmp(name, "noiseBand")            == 0) return e->noiseKaleido.noiseBand;
+    if (strcasecmp(name, "kaleidoGamma")         == 0) return e->noiseKaleido.kaleidoGamma;
+    // Cube
+    if (strcasecmp(name, "scale")                == 0) return e->cube.scale;
+    if (strcasecmp(name, "rotateSpeedX")         == 0) return e->cube.rotateSpeed[0];
+    if (strcasecmp(name, "rotateSpeedY")         == 0) return e->cube.rotateSpeed[1];
+    if (strcasecmp(name, "rotateSpeedZ")         == 0) return e->cube.rotateSpeed[2];
+    if (strcasecmp(name, "modScaleRate")         == 0) return e->cube.modScale.modRate;
+    if (strcasecmp(name, "modScaleLevel")        == 0) return e->cube.modScale.modLevel;
+    if (strcasecmp(name, "modRotateSpeedXRate")  == 0) return e->cube.modRotateSpeedX.modRate;
+    if (strcasecmp(name, "modRotateSpeedXLevel") == 0) return e->cube.modRotateSpeedX.modLevel;
+    if (strcasecmp(name, "modRotateSpeedYRate")  == 0) return e->cube.modRotateSpeedY.modRate;
+    if (strcasecmp(name, "modRotateSpeedYLevel") == 0) return e->cube.modRotateSpeedY.modLevel;
+    if (strcasecmp(name, "modRotateSpeedZRate")  == 0) return e->cube.modRotateSpeedZ.modRate;
+    if (strcasecmp(name, "modRotateSpeedZLevel") == 0) return e->cube.modRotateSpeedZ.modLevel;
+    // FluidJet
+    if (strcasecmp(name, "jetDensity")           == 0) return e->fluidJet.jetDensity;
+    if (strcasecmp(name, "jetForce")             == 0) return e->fluidJet.jetForce;
+    if (strcasecmp(name, "jetRadius")            == 0) return e->fluidJet.jetRadius;
+    if (strcasecmp(name, "jetSpread")            == 0) return e->fluidJet.jetSpread;
+    if (strcasecmp(name, "jetAngle")             == 0) return e->fluidJet.jetAngle;
+    if (strcasecmp(name, "jetHueSpeed")          == 0) return e->fluidJet.jetHueSpeed;
+    if (strcasecmp(name, "modJetForceRate")      == 0) return e->fluidJet.modJetForce.modRate;
+    if (strcasecmp(name, "modJetForceLevel")     == 0) return e->fluidJet.modJetForce.modLevel;
+    if (strcasecmp(name, "modAngleRate")         == 0) return e->fluidJet.modAngle.modRate;
+    if (strcasecmp(name, "modAngleLevel")        == 0) return e->fluidJet.modAngle.modLevel;
+    // NoiseFlow
+    if (strcasecmp(name, "xSpeed")               == 0) return e->noiseFlow.xSpeed;
+    if (strcasecmp(name, "ySpeed")               == 0) return e->noiseFlow.ySpeed;
+    if (strcasecmp(name, "xAmp")                 == 0) return e->noiseFlow.xAmp;
+    if (strcasecmp(name, "yAmp")                 == 0) return e->noiseFlow.yAmp;
+    if (strcasecmp(name, "xFreq")                == 0) return e->noiseFlow.xFreq;
+    if (strcasecmp(name, "yFreq")                == 0) return e->noiseFlow.yFreq;
+    if (strcasecmp(name, "xShift")               == 0) return e->noiseFlow.xShift;
+    if (strcasecmp(name, "yShift")               == 0) return e->noiseFlow.yShift;
+    if (strcasecmp(name, "modAmpRate")           == 0) return e->noiseFlow.modAmp.modRate;
+    if (strcasecmp(name, "modAmpLevel")          == 0) return e->noiseFlow.modAmp.modLevel;
+    if (strcasecmp(name, "modSpeedRate")         == 0) return e->noiseFlow.modSpeed.modRate;
+    if (strcasecmp(name, "modSpeedLevel")        == 0) return e->noiseFlow.modSpeed.modLevel;
+    if (strcasecmp(name, "modShiftRate")         == 0) return e->noiseFlow.modShift.modRate;
+    if (strcasecmp(name, "modShiftLevel")        == 0) return e->noiseFlow.modShift.modLevel;
+    // Directional
+    if (strcasecmp(name, "windStep")             == 0) return e->directional.windStep;
+    if (strcasecmp(name, "rotateSpeed")          == 0) return e->directional.rotateSpeed;
+    if (strcasecmp(name, "waveAmp")              == 0) return e->directional.waveAmp;
+    if (strcasecmp(name, "waveFreq")             == 0) return e->directional.waveFreq;
+    if (strcasecmp(name, "waveSpeed")            == 0) return e->directional.waveSpeed;
+    // RingFlow
+    if (strcasecmp(name, "innerSwirl")           == 0) return e->ringFlow.innerSwirl;
+    if (strcasecmp(name, "outerSwirl")           == 0) return e->ringFlow.outerSwirl;
+    if (strcasecmp(name, "midDrift")             == 0) return e->ringFlow.midDrift;
+    if (strcasecmp(name, "modBreatheRate")       == 0) return e->ringFlow.modBreathe.modRate;
+    if (strcasecmp(name, "modBreatheLevel")      == 0) return e->ringFlow.modBreathe.modLevel;
+    // Spiral
+    if (strcasecmp(name, "angularStep")          == 0) return e->spiral.angularStep;
+    if (strcasecmp(name, "modAngularStepRate")   == 0) return e->spiral.modAngularStep.modRate;
+    if (strcasecmp(name, "modAngularStepLevel")  == 0) return e->spiral.modAngularStep.modLevel;
+    if (strcasecmp(name, "modRadialStepRate")    == 0) return e->spiral.modRadialStep.modRate;
+    if (strcasecmp(name, "modRadialStepLevel")   == 0) return e->spiral.modRadialStep.modLevel;
+    if (strcasecmp(name, "modBlendFactorRate")   == 0) return e->spiral.modBlendFactor.modRate;
+    if (strcasecmp(name, "modBlendFactorLevel")  == 0) return e->spiral.modBlendFactor.modLevel;
+    // Fluid
+    if (strcasecmp(name, "viscosity")            == 0) return e->fluid.viscosity;
+    if (strcasecmp(name, "diffusion")            == 0) return e->fluid.diffusion;
+    if (strcasecmp(name, "velocityDissipation")  == 0) return e->fluid.velocityDissipation;
+    if (strcasecmp(name, "dyeDissipation")       == 0) return e->fluid.dyeDissipation;
+    if (strcasecmp(name, "vorticity")            == 0) return e->fluid.vorticity;
+    if (strcasecmp(name, "gravity")              == 0) return e->fluid.gravity;
+    if (strcasecmp(name, "modVelDissipRate")     == 0) return e->fluid.modVelDissip.modRate;
+    if (strcasecmp(name, "modVelDissipLevel")    == 0) return e->fluid.modVelDissip.modLevel;
+    if (strcasecmp(name, "modDyeDissipRate")     == 0) return e->fluid.modDyeDissip.modRate;
+    if (strcasecmp(name, "modDyeDissipLevel")    == 0) return e->fluid.modDyeDissip.modLevel;
+    return 0.0f;
+}
+
 // Handle UI request functions ***********************************************
 
 std::string convertToStdString(const String& flStr) {
@@ -544,22 +748,15 @@ void processNumber(String receivedID, float receivedValue, int8_t busId = -1) {
       cBright = receivedValue;
       BRIGHTNESS = cBright;
       FastLED.setBrightness(BRIGHTNESS);
-   };
+      return;
+   }
 
+   // Route engine params (emitters, flows, globals) directly
+   if (receivedID.startsWith("in")) {
+      bleSetEngineParam(receivedID.c_str() + 2, receivedValue);
+   }
 
-   /*
-   if (receivedID == "inPalNum") {
-      uint8_t newPalNum = receivedValue;
-      gTargetPalette = gGradientPalettes[ newPalNum ];
-      if(debug) {
-         Serial.print("newPalNum: ");
-         Serial.println(newPalNum);
-      }
-   };
-   */
-
-   //-------------------------------------------------------
-   // Auto-generated custom parameter handling using X-macros
+   // Audio/misc cVars handled by X-macro table
    #define X(type, parameter, def) \
        if (receivedID == "in" #parameter) { c##parameter = receivedValue; return; }
    PARAMETER_TABLE
@@ -577,12 +774,12 @@ void processCheckbox(String receivedID, bool receivedValue ) {
 
    if (receivedID == "cx11") {mappingOverride = receivedValue;};
 
-   if (receivedID == "cx21") {cAxisFreezeX = receivedValue;};
-   if (receivedID == "cx22") {cAxisFreezeY = receivedValue;};
-   if (receivedID == "cx23") {cAxisFreezeZ = receivedValue;};
+   if (receivedID == "cx21") { flowFields::g_engine->cube.axisFreeze[0] = receivedValue; }
+   if (receivedID == "cx22") { flowFields::g_engine->cube.axisFreeze[1] = receivedValue; }
+   if (receivedID == "cx23") { flowFields::g_engine->cube.axisFreeze[2] = receivedValue; }
 
-   if (receivedID == "cx31") {cOutward = receivedValue;};
-   if (receivedID == "cx32") {cUseRainbow = receivedValue;};
+   if (receivedID == "cx31") { flowFields::g_engine->spiral.outward = receivedValue; flowFields::g_engine->radial.outward = receivedValue; }
+   if (receivedID == "cx32") { flowFields::g_engine->useRainbow = receivedValue; }
 
 }
 

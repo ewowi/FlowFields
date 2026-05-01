@@ -11,18 +11,6 @@ namespace flowFields {
     FL_FAST_MATH_BEGIN
     FL_OPTIMIZATION_LEVEL_O3_BEGIN
 
-    struct CubeParams {
-        float scale = 1.0f;
-        float rotateSpeed[3] = {0.6f, 0.9f, 0.3f};  // X, Y, Z rotation rates (radians/sec)
-        bool axisFreeze[3] = {false, false, false};   // per-axis freeze toggles
-
-        ModConfig modScale        = {0, 0.5f, 0.0f};  // modTimer, modRate, modLevel
-        ModConfig modRotateSpeedX = {1, 0.5f, 0.0f};
-        ModConfig modRotateSpeedY = {2, 0.5f, 0.0f};
-        ModConfig modRotateSpeedZ = {3, 0.5f, 0.0f};
-    };
-
-    CubeParams cube;
 
     // Runtime working values prepared each frame by cubePrepare()
     static float workScale = 1.0f;

@@ -17,19 +17,6 @@ namespace flowFields {
     FL_FAST_MATH_BEGIN
     FL_OPTIMIZATION_LEVEL_O3_BEGIN
 
-    struct SpiralParams {
-        float angularStep   = 0.28f;   // rotation per sample (radians)
-        float radialStep    = 0.18f;   // radial offset per sample
-        float blendFactor   = 0.45f;   // blend: 0 = keep current, 1 = fully transport
-        bool  outward       = false;   // false = inward spiral, true = outward spiral
-
-        // Shared UI-facing modulation controls.
-        ModConfig modAngularStep   = {0, 0.5f, 0.5f}; // modTimer, modRate, modLevel
-        ModConfig modRadialStep = {1, 0.5f, 0.5f};
-        ModConfig modBlendFactor = {2, 0.5f, 0.5f};
-    };
-
-    SpiralParams spiral;
 
     // Runtime working values prepared each frame by spiralPrepare()
     // and consumed by spiralAdvect().

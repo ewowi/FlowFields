@@ -11,17 +11,6 @@ namespace flowFields {
     FL_FAST_MATH_BEGIN
     FL_OPTIMIZATION_LEVEL_O3_BEGIN
 
-    struct OrbitalDotsParams {
-        uint8_t numDots    = 3;
-        float orbitSpeed = 2.0f;
-        ModConfig modOrbitSpeed = {0, 1.0f, 1.0f};       // modTimer, modRate, modLevel
-        float dotDiam    = 1.5f;
-        float orbitDiam  = 6.6f;   // ~minDim * 0.3 for a 22-px grid; overridden by syncFromCVars()
-        ModConfig modOrbitDiam = {1, 1.0f, 1.0f};         // modTimer, modRate, modLevel
-        uint8_t numActiveTimers = 2;
-    };
-
-    OrbitalDotsParams orbitalDots;
 
     static void emitOrbitalDots() {
         static float orbitAngle = 0.0f;

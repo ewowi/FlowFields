@@ -11,15 +11,6 @@ namespace flowFields {
     FL_FAST_MATH_BEGIN
     FL_OPTIMIZATION_LEVEL_O3_BEGIN
 
-    struct LissajousParams {
-        float lineSpeed = 0.35f;
-        float lineAmp = 13.5f;   // ~(minDim - 4) * 0.75 for a 22-px grid; overridden by syncFromCVars()
-        uint8_t lineClamp = 0;  // 0 = free (wrap), 1 = clamp to grid, 2 = tether nearest to center
-        ModConfig modLineSpeed = {0, 1.0f, 0.0f}; // modTimer, modRate, modLevel
-        ModConfig modLineAmp   = {1, 0.5f, 0.0f};
-    };
-
-    LissajousParams lissajous;
 
     static void emitLissajousLine() {
         const float cx = (g_engine->_width  - 1) * 0.5f;

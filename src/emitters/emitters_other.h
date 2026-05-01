@@ -27,11 +27,6 @@ namespace flowFields {
         cFrame = &myAudio::updateAudioFrame(b);
     }
 
-    struct AudioDotsParams {
-        uint8_t dotDiam = 1.0f;
-    };
-
-    AudioDotsParams audioDots;
 
     static void emitAudioDots() {
         if (audioEnabled) {

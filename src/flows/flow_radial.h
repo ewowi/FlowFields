@@ -15,13 +15,6 @@ namespace flowFields {
     FL_FAST_MATH_BEGIN
     FL_OPTIMIZATION_LEVEL_O3_BEGIN
 
-    struct RadialParams {
-        float radialStep        = 0.18f;   // how far to sample (controls radial speed)
-        float blendFactor       = 0.45f;   // blend factor (0 = keep current, 1 = fully transport)
-        bool  outward           = false;   // false = radial in, true = radial out
-    };
-
-    RadialParams    radial;
 
     // --- Prepare: nothing to build (geometry is purely radial) ---
 

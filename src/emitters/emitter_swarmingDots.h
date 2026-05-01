@@ -11,17 +11,6 @@ namespace flowFields {
     FL_FAST_MATH_BEGIN
     FL_OPTIMIZATION_LEVEL_O3_BEGIN
 
-    struct SwarmingDotsParams {
-        uint8_t numDots = 3;
-        float swarmSpeed = 0.5f;
-        float swarmSpread = 0.5f;
-        ModConfig modSwarmSpread = {10, 1.0f, 1.0f};       // modTimer, modRate, modLevel
-        ModConfig modSwarmSpeed  = {11, 1.0f, 0.0f};       // modTimer, modRate, modLevel
-        float dotDiam = 1.5f;
-        uint8_t numActiveTimers = 12;
-    };
-
-    SwarmingDotsParams swarmingDots;
 
     // Variable number of dots moving in a loose shifting group.
     // Uses an integrated time base for dot motion to preserve continuity

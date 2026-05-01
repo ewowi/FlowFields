@@ -17,16 +17,6 @@ namespace flowFields {
     FL_FAST_MATH_BEGIN
     FL_OPTIMIZATION_LEVEL_O3_BEGIN
 
-    struct DirectionalParams {
-        float windStep    = 0.95f;   // backward sample distance (pixels)
-        float blendFactor = 0.86f;   // transport blend (0 = keep current, 1 = full transport)
-        float rotateSpeed = 0.25f;   // wind rotation (rev/sec; 0 = fixed direction)
-        float waveAmp     = 0.0f;    // perpendicular wave amplitude (0 = off)
-        float waveFreq    = 0.20f;   // wave spatial frequency
-        float waveSpeed   = 1.20f;   // wave temporal speed
-    };
-
-    DirectionalParams   directional;
 
     // Computed in prepare, consumed in advect
     static float dirCos, dirSin;   // unit wind direction

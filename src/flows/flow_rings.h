@@ -16,17 +16,6 @@ namespace flowFields {
     FL_FAST_MATH_BEGIN
     FL_OPTIMIZATION_LEVEL_O3_BEGIN
 
-    struct RingFlowParams {
-        float innerSwirl = -0.2f;   // angular step for inner zone (negative = CW)
-        float outerSwirl =  0.2f;   // angular step for outer zone (positive = CCW)
-        float midDrift   =  0.3f;   // radial outward drift for middle zone
-
-        // Breathing modulation — controls how zone geometry pulses over time.
-        // Uses 3 consecutive timers (modTimer, +1, +2) for inner/mid/outer.
-        ModConfig modBreathe = {0, 1.0f, 1.0f};   // modTimer, modRate, modLevel
-    };
-
-    RingFlowParams ringFlow;
 
     // Working values computed in prepare, consumed in advect
     static float ringBreatheInner = 1.0f;

@@ -3,6 +3,7 @@
 #include "componentEnums.h"
 #include "flowFieldsTypes.h"   // Perlin1D/2D, ValueNoise2D, ColorF, ModConfig, math helpers
 #include "modulators.h"        // timers, modulators structs
+#include "FlowFieldsParamTypes.h"
 
 namespace flowFields {
 
@@ -37,15 +38,32 @@ public:
     float t  = 0.0f;
     float dt = 0.0f;
 
-    // ── Config ────────────────────────────────────────────────────────────
+    // ── Global config ─────────────────────────────────────────────────────
     float globalSpeed = 1.0f;
     float persistence = 0.05f;
     float colorShift  = 0.20f;
     bool  useRainbow  = false;
 
+    // ── Emitter param structs (public — set directly by library consumers) ──
+    OrbitalDotsParams  orbitalDots;
+    SwarmingDotsParams swarmingDots;
+    AudioDotsParams    audioDots;
+    LissajousParams    lissajous;
+    NoiseKaleidoParams noiseKaleido;
+    CubeParams         cube;
+    FluidJetParams     fluidJet;
+
+    // ── Flow param structs (public — set directly by library consumers) ─────
+    NoiseFlowParams    noiseFlow;
+    RadialParams       radial;
+    DirectionalParams  directional;
+    RingFlowParams     ringFlow;
+    SpiralParams       spiral;
+    FluidParams        fluid;
+
     // ── Selection state ───────────────────────────────────────────────────
-    uint8_t _emitter    = 0;     // replaces global EMITTER — set by BLE or bindParam
-    uint8_t _flow       = 0;     // replaces global FLOW
+    uint8_t _emitter    = 0;
+    uint8_t _flow       = 0;
     uint8_t lastEmitter = 255;
     uint8_t lastFlow    = 255;
     Emitter activeEmitter = EMITTER_ORBITALDOTS;
@@ -70,7 +88,7 @@ public:
     void run(fl::CRGB* leds);
     void teardown();
 
-    // ── Modulator calculation — called by emitters/flows as g_engine->calculate_modulators(N)
+    // ── Modulator calculation ─────────────────────────────────────────────
     void calculate_modulators(uint8_t numActiveTimers);
 
     // ── Color helpers ─────────────────────────────────────────────────────
@@ -78,42 +96,19 @@ public:
     static ColorF hsvRainbow(float hue);
     ColorF rainbow(float t_val, float speed, float phase) const;
 
-    // ── Drawing primitives — called by emitters/flows as g_engine->drawXxx(...)
+    // ── Drawing primitives ────────────────────────────────────────────────
     void drawDot(float cx, float cy, float diam, float cr, float cg, float cb);
     void blendPixelWeighted(int px, int py, float cr, float cg, float cb, float w);
     void drawAAEndpointDisc(float cx, float cy, float cr, float cg, float cb,
                             float radius = 0.85f);
     void drawAASubpixelLine(float x0, float y0, float x1, float y1);
 
-    // ── cVar bridge (implemented in flowFieldsEngine.cpp; reads/writes parameterSchema.h cVars) ──
-    void pushDefaultsToCVars();
-    void syncFromCVars();
-    void pushFlowDefaultsToCVars();
-    void syncFlowFromCVars();
-
-    // ── Parameter binding (Phase 3) ───────────────────────────────────────────
-    // Call once during setup() to redirect a named cVar to an external float.
-    // run() copies *externalPtr → cVar before syncFromCVars() — zero per-frame
-    // string lookups, just one pointer dereference per bound parameter.
-    // The BLE firmware ignores this; bindings are only set by library consumers.
-    void bindParam(const char* name, float* externalPtr);
-
 private:
     static float** allocGrid(uint16_t w, uint16_t h);
     static void    freeGrid(float** g, uint16_t h);
-    float*         resolveField(const char* name);
-
-    struct ParamBinding { float* external; float* field; };
-    static constexpr int MAX_PARAM_BINDINGS = 80;
-    ParamBinding paramBindings_[MAX_PARAM_BINDINGS] = {};
-    int          numParamBindings_ = 0;
-    // Emitter/flow selects are uint8_t globals, handled separately.
-    float*       pEmitterSel_ = nullptr;
-    float*       pFlowSel_    = nullptr;
 };
 
 // Set by FlowFieldsEngine::run() before dispatching to any emitter/flow function.
-// Safe for single-threaded embedded use (one active engine at a time).
 extern FlowFieldsEngine* g_engine;
 
 } // namespace flowFields

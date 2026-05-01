@@ -18,19 +18,6 @@ namespace flowFields {
     FL_FAST_MATH_BEGIN
     FL_OPTIMIZATION_LEVEL_O3_BEGIN
 
-    struct FluidJetParams {
-        float jetDensity   = 50.0f;     // dye magnitude (per layer-weighted)
-        float jetForce     = 0.25f;      // velocity magnitude
-        float jetRadius    = 2.0f;       // gaussian splat radius (cells)
-        float jetSpread    = 1.0f;       // side-injection lateral velocity
-        float jetAngle     = 0.0f;       // base direction (radians; 0 = straight up)
-        float jetHueSpeed  = 0.7f;      // hue rotation rate (Hz)
-
-        ModConfig modJetForce = {0, 0.3f, 0.1f};   // modTimer, modRate, modLevel
-        ModConfig modAngle    = {1, 0.3f, 2.0f};   // modLevel: 0 = no movement, 2 = full ±90°
-    };
-
-    FluidJetParams fluidJet;
 
     // 4x4 Bayer matrix, values normalized to [-0.5, +0.5].
     // Used for per-cell hue dithering to break uint8 banding from single-color splats.
